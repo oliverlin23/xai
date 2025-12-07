@@ -299,6 +299,9 @@ class TradingSimulation:
 # Global registry of active simulations
 ACTIVE_SIMULATIONS: Dict[str, TradingSimulation] = {}
 
+# Global registry of sessions being initialized (superforecasters running)
+INITIALIZING_SESSIONS: Dict[str, bool] = {}
+
 
 def get_simulation(session_id: str) -> Optional[TradingSimulation]:
     """Get an active simulation by session ID."""
@@ -308,6 +311,9 @@ def get_simulation(session_id: str) -> Optional[TradingSimulation]:
 def register_simulation(simulation: TradingSimulation) -> None:
     """Register a simulation in the global registry."""
     ACTIVE_SIMULATIONS[simulation.session_id] = simulation
+    # Remove from initializing once simulation is active
+    if simulation.session_id in INITIALIZING_SESSIONS:
+        del INITIALIZING_SESSIONS[simulation.session_id]
     logger.info(f"Registered simulation for session {simulation.session_id}")
 
 
@@ -316,8 +322,29 @@ def unregister_simulation(session_id: str) -> None:
     if session_id in ACTIVE_SIMULATIONS:
         del ACTIVE_SIMULATIONS[session_id]
         logger.info(f"Unregistered simulation for session {session_id}")
+    # Also clean up initializing registry just in case
+    if session_id in INITIALIZING_SESSIONS:
+        del INITIALIZING_SESSIONS[session_id]
 
 
 def get_all_simulations() -> Dict[str, TradingSimulation]:
     """Get all active simulations."""
     return ACTIVE_SIMULATIONS.copy()
+
+
+def mark_session_initializing(session_id: str) -> None:
+    """Mark a session as initializing (superforecasters running)."""
+    INITIALIZING_SESSIONS[session_id] = True
+    logger.info(f"Session {session_id} marked as initializing")
+
+
+def is_session_initializing(session_id: str) -> bool:
+    """Check if a session is currently initializing."""
+    return INITIALIZING_SESSIONS.get(session_id, False)
+
+
+def clear_session_initializing(session_id: str) -> None:
+    """Clear the initializing flag for a session."""
+    if session_id in INITIALIZING_SESSIONS:
+        del INITIALIZING_SESSIONS[session_id]
+        logger.info(f"Session {session_id} cleared from initializing")

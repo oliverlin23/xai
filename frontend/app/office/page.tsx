@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense, useCallback, useRef } from "react"
+import { useEffect, useState, Suspense, useCallback } from "react"
 import { useTradingStore } from "@/lib/store"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
@@ -10,6 +10,10 @@ import { Press_Start_2P } from "next/font/google"
 import { PriceGraph } from "@/components/trading/PriceGraph"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
+
+// Module-level tracking to prevent React Strict Mode double-init
+// This persists across component remounts but not page refreshes
+let startedSimulationQuery: string | null = null
 
 const workerSprites = [
   "/sprites/worker1.png",
@@ -272,16 +276,33 @@ const TradeFeed = ({ trades }: { trades: Trade[] }) => {
 const SimulationControls = ({
   sessionId,
   isRunning,
+  simulationPhase,
   roundNumber,
   onStop,
   questionText,
 }: {
   sessionId: string | null
   isRunning: boolean
+  simulationPhase: "initializing" | "running" | "stopped"
   roundNumber: number
   onStop: () => void
   questionText: string
 }) => {
+  // Determine status text and color based on phase
+  const getStatusDisplay = () => {
+    switch (simulationPhase) {
+      case "initializing":
+        return { text: "Initializing...", color: "text-yellow-400" }
+      case "running":
+        return { text: "Running", color: "text-green-400" }
+      case "stopped":
+      default:
+        return { text: "Stopped", color: "text-slate-500" }
+    }
+  }
+  
+  const statusDisplay = getStatusDisplay()
+  
   return (
     <div className="absolute top-4 left-4 w-80 rounded-lg border-2 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-lg z-40">
       <div className="px-3 py-2 border-b border-[#2d3748] bg-[#1a1f2e]">
@@ -295,10 +316,15 @@ const SimulationControls = ({
         )}
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-400">Status:</span>
-          <span className={isRunning ? "text-green-400" : "text-slate-500"}>
-            {isRunning ? "Running" : "Stopped"}
+          <span className={statusDisplay.color}>
+            {statusDisplay.text}
           </span>
         </div>
+        {simulationPhase === "initializing" && (
+          <div className="text-[10px] text-slate-500 italic">
+            Superforecasters analyzing market...
+          </div>
+        )}
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-400">Round:</span>
           <span className="text-blue-400">{roundNumber}</span>
@@ -360,25 +386,19 @@ const AgentDetailModal = ({
           {agent.traderState && (
             <div className="p-4 bg-[#0f172a]/50 rounded-lg border border-[#2d3748]">
               <h3 className="text-sm font-semibold mb-3 text-slate-300">Trading State</h3>
-              <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="text-sm">
                 <div>
                   <div className="text-slate-500 text-xs">Position</div>
                   <div className={agent.traderState.position >= 0 ? "text-green-400" : "text-red-400"}>
                     {agent.traderState.position}
                   </div>
                 </div>
-                <div>
-                  <div className="text-slate-500 text-xs">P&L</div>
-                  <div className={agent.traderState.pnl >= 0 ? "text-green-400" : "text-red-400"}>
-                    ${agent.traderState.pnl.toFixed(2)}
-                  </div>
-                </div>
               </div>
               
               {agent.traderState.system_prompt && (
                 <div className="mt-4 pt-4 border-t border-[#2d3748]">
-                  <div className="text-slate-500 text-xs mb-2">Agent Notes</div>
-                  <pre className="text-[11px] text-slate-400 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                  <div className="text-slate-500 text-xs mb-2">Notes:</div>
+                  <pre className="text-[11px] text-slate-400 whitespace-pre-wrap max-h-48 overflow-y-auto bg-[#0a0f1a] p-3 rounded border border-[#2d3748]/50">
                     {agent.traderState.system_prompt}
                   </pre>
                 </div>
@@ -520,11 +540,13 @@ function OfficePageContent() {
       })
 
       setSessionId(result.session_id)
-      setIsRunning(true)
+      // Set to initializing immediately - polling will update to "running" once simulation starts
+      setSimulationPhase("initializing")
       setIsLoading(false)
     } catch (error) {
       console.error("Error starting simulation:", error)
       setIsLoading(false)
+      setSimulationPhase("stopped")
       alert("Failed to start simulation. Please try again.")
     }
   }, [])
@@ -536,22 +558,28 @@ function OfficePageContent() {
     try {
       await api.sessions.stop(sessionId)
       setIsRunning(false)
+      setSimulationPhase("stopped")
     } catch (error) {
       console.error("Error stopping simulation:", error)
     }
   }, [sessionId])
 
-  // Track if we've already started a simulation (prevents React Strict Mode double-call)
-  const hasStartedRef = useRef(false)
-
-  // Handle query param
+  // Handle query param - use module-level tracking to survive Strict Mode remounts
   useEffect(() => {
     const query = searchParams.get("q")
-    if (query && !sessionId && !hasStartedRef.current) {
-      hasStartedRef.current = true
+    // Only start if: query exists, no session yet, and this query hasn't already started
+    if (query && !sessionId && startedSimulationQuery !== query) {
+      startedSimulationQuery = query
       startSimulation(query)
     }
   }, [searchParams, sessionId, startSimulation])
+
+  // Reset module-level tracking when component unmounts (page navigation)
+  useEffect(() => {
+    return () => {
+      startedSimulationQuery = null
+    }
+  }, [])
 
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center relative overflow-hidden font-pixel">
@@ -579,6 +607,7 @@ function OfficePageContent() {
       <SimulationControls
         sessionId={sessionId}
         isRunning={isRunning}
+        simulationPhase={simulationPhase}
         roundNumber={roundNumber}
         onStop={stopSimulation}
         questionText={questionText}

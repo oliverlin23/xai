@@ -58,6 +58,30 @@ export function useRealtimeTrades(sessionId: string) {
   useEffect(() => {
     if (!sessionId) return
 
+    // Fetch initial data
+    const fetchInitialData = async () => {
+      // Fetch existing trades
+      const { data: trades } = await supabase
+        .from("trades")
+        .select("*")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: true })
+
+      // Fetch existing trader states
+      const { data: traderStates } = await supabase
+        .from("trader_state_live")
+        .select("*")
+        .eq("session_id", sessionId)
+
+      setData({
+        trades: trades || [],
+        traderStates: traderStates || [],
+        lastTrade: trades && trades.length > 0 ? trades[trades.length - 1] : null,
+      })
+    }
+
+    fetchInitialData()
+
     const channel = supabase
       .channel(`trading:${sessionId}`)
       // Subscribe to new trades

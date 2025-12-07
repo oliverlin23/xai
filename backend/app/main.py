@@ -433,8 +433,10 @@ async def run_trading_simulation_background(
     except Exception as e:
         logger.error(f"[BACKGROUND] Trading simulation failed for session {session_id}: {e}", exc_info=True)
     finally:
-        # Clean up
+        # Clean up both registries
         unregister_simulation(session_id)
+        from app.traders.simulation import clear_session_initializing
+        clear_session_initializing(session_id)
         logger.info(f"[BACKGROUND] Trading simulation ended for session {session_id}")
 
 
@@ -482,6 +484,11 @@ async def run_session(request: RunSessionRequest, background_tasks: BackgroundTa
             agent_counts["phase_3_research"] = request.agent_counts.phase_3_research
         if request.agent_counts.phase_4_synthesis is not None:
             agent_counts["phase_4_synthesis"] = request.agent_counts.phase_4_synthesis
+    
+    # Mark session as initializing BEFORE starting background task
+    # This ensures status endpoint returns "initializing" immediately
+    from app.traders.simulation import mark_session_initializing
+    mark_session_initializing(session_id)
     
     # Start trading simulation in background
     background_tasks.add_task(
@@ -535,7 +542,7 @@ async def get_simulation_status(session_id: str):
     - "running": Trading simulation is active
     - "stopped": Simulation has stopped or completed
     """
-    from app.traders.simulation import get_simulation
+    from app.traders.simulation import get_simulation, is_session_initializing
     from app.db.repositories import ForecasterResponseRepository
     
     simulation = get_simulation(session_id)
@@ -548,7 +555,20 @@ async def get_simulation_status(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        # Check if superforecasters are still running
+        # First check: is session marked as initializing in memory?
+        # This catches the case immediately after /run returns but before forecaster_responses are created
+        if is_session_initializing(session_id):
+            return SimulationStatusResponse(
+                session_id=session_id,
+                running=False,
+                round_number=0,
+                agent_count=0,
+                agents=[],
+                message="Superforecasters initializing market...",
+                phase="initializing",
+            )
+        
+        # Second check: are there any running forecaster responses in DB?
         forecaster_repo = ForecasterResponseRepository()
         forecaster_responses = forecaster_repo.find_all(filters={"session_id": session_id})
         

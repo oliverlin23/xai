@@ -284,7 +284,8 @@ class UserAgent(BaseAgent):
             system_prompt=system_prompt,
             output_schema=UserAgentOutput,
             max_retries=max_retries,
-            timeout_seconds=timeout_seconds
+            timeout_seconds=timeout_seconds,
+            session_id=session_id,
         )
         
         # Initialize account filter

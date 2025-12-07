@@ -216,7 +216,8 @@ class FundamentalTrader(BaseAgent):
             system_prompt=_get_fundamental_trader_prompt(trader_type),
             output_schema=FundamentalTraderOutput,
             max_retries=max_retries,
-            timeout_seconds=timeout_seconds
+            timeout_seconds=timeout_seconds,
+            session_id=session_id,
         )
         
         # Track notes across rounds

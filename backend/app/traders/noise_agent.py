@@ -261,7 +261,8 @@ class NoiseTrader(BaseAgent):
             system_prompt=_get_noise_trader_prompt(sphere),
             output_schema=NoiseTraderOutput,
             max_retries=max_retries,
-            timeout_seconds=timeout_seconds
+            timeout_seconds=timeout_seconds,
+            session_id=session_id,
         )
         
         self._tools_enabled = enable_tools and not use_semantic_filter
