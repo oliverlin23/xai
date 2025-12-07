@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
-from .models import Order, Trade, TraderState, OrderSide, OrderStatus
+from .models import Order, Trade, TraderState, OrderSide, OrderStatus, get_trader_type
 
 
 @dataclass
@@ -51,6 +51,7 @@ class OrderBook:
         if trader_name not in self.trader_states:
             self.trader_states[trader_name] = TraderState(
                 session_id=self.session_id,
+                trader_type=get_trader_type(trader_name),
                 name=trader_name,
             )
         return self.trader_states[trader_name]

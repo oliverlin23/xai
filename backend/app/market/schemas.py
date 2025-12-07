@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from .models import VALID_TRADER_NAMES
+from .models import VALID_TRADER_NAMES, TraderType as ModelTraderType
 
 
 class OrderSide(str, Enum):
@@ -68,9 +68,16 @@ class TradeResponse(BaseModel):
     created_at: datetime
 
 
+class TraderType(str, Enum):
+    FUNDAMENTAL = "fundamental"
+    NOISE = "noise"
+    USER = "user"
+
+
 class TraderStateResponse(BaseModel):
     """Trader's current state."""
     session_id: str
+    trader_type: TraderType
     name: str
     position: int
     cash: Decimal

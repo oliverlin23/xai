@@ -20,11 +20,18 @@ Trading system for prediction market simulation.
 
 | Type           | Values                                            |
 | -------------- | ------------------------------------------------- |
-| `trader_name`  | `1-5` (fundamental), sphere keys (noise)          |
+| `trader_type`  | `fundamental`, `noise`, `user`                    |
+| `trader_name`  | See below                                         |
 | `order_side`   | `buy`, `sell`                                     |
 | `order_status` | `open`, `filled`, `partially_filled`, `cancelled` |
 
-**Sphere keys:** `eacc_sovereign`, `america_first`, `blue_establishment`, `progressive_left`, `optimizer_idw`, `fintwit_market`, `builder_engineering`, `academic_research`, `osint_intel`
+**Trader names by type:**
+
+| Type        | Names                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| fundamental | `conservative`, `momentum`, `historical`, `balanced`, `realtime`                                                                                                          |
+| noise       | `eacc_sovereign`, `america_first`, `blue_establishment`, `progressive_left`, `optimizer_idw`, `fintwit_market`, `builder_engineering`, `academic_research`, `osint_intel` |
+| user        | `oliver`, `owen`, `skylar`, `tyler`                                                                                                                                       |
 
 ### Tables
 
@@ -35,8 +42,9 @@ Current state of each trader in a session.
 | Column        | Type        | Default | Description                   |
 | ------------- | ----------- | ------- | ----------------------------- |
 | session_id    | UUID        | -       | FK to sessions                |
+| trader_type   | trader_type | -       | fundamental, noise, or user   |
 | name          | trader_name | -       | Trader identifier             |
-| system_prompt | TEXT        | -       | Current LLM prompt            |
+| system_prompt | TEXT        | NULL    | Current LLM prompt (optional) |
 | position      | INTEGER     | 0       | Contracts held (+long/-short) |
 | cash          | DECIMAL     | 1000.00 | Available cash                |
 | pnl           | DECIMAL     | 0       | Profit/loss                   |
@@ -48,6 +56,7 @@ Historical log of all system prompts.
 | Column        | Type        | Description                         |
 | ------------- | ----------- | ----------------------------------- |
 | session_id    | UUID        | FK to sessions                      |
+| trader_type   | trader_type | fundamental, noise, or user         |
 | name          | trader_name | Trader identifier                   |
 | prompt_number | INTEGER     | Sequential prompt # for this trader |
 | system_prompt | TEXT        | The prompt content                  |

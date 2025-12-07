@@ -106,6 +106,7 @@ async def place_order(session_id: str, request: CreateOrderRequest):
         ],
         trader_state=TraderStateResponse(
             session_id=state.session_id,
+            trader_type=state.trader_type,
             name=state.name,
             position=state.position,
             cash=state.cash,
@@ -157,6 +158,7 @@ async def get_trader_state(session_id: str, trader_name: str):
     
     return TraderStateResponse(
         session_id=state.session_id,
+        trader_type=state.trader_type,
         name=state.name,
         position=state.position,
         cash=state.cash,
@@ -180,6 +182,7 @@ async def list_trader_states(session_id: str):
     return [
         TraderStateResponse(
             session_id=state.session_id,
+            trader_type=state.trader_type,
             name=state.name,
             position=state.position,
             cash=state.cash,

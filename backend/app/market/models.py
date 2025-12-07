@@ -30,14 +30,34 @@ class OrderStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-# Valid trader names (matches DB enum: trader_name)
-VALID_TRADER_NAMES = {
-    # Fundamental traders
-    "1", "2", "3", "4", "5",
-    # Noise traders (spheres)
+# Matches DB enum: trader_type
+class TraderType(str, Enum):
+    FUNDAMENTAL = "fundamental"
+    NOISE = "noise"
+    USER = "user"
+
+
+# Valid trader names by type (matches DB enum: trader_name)
+FUNDAMENTAL_TRADERS = {"conservative", "momentum", "historical", "balanced", "realtime"}
+NOISE_TRADERS = {
     "eacc_sovereign", "america_first", "blue_establishment", "progressive_left",
     "optimizer_idw", "fintwit_market", "builder_engineering", "academic_research", "osint_intel",
 }
+USER_TRADERS = {"oliver", "owen", "skylar", "tyler"}
+
+VALID_TRADER_NAMES = FUNDAMENTAL_TRADERS | NOISE_TRADERS | USER_TRADERS
+
+
+def get_trader_type(name: str) -> TraderType:
+    """Get the trader type for a given name."""
+    if name in FUNDAMENTAL_TRADERS:
+        return TraderType.FUNDAMENTAL
+    elif name in NOISE_TRADERS:
+        return TraderType.NOISE
+    elif name in USER_TRADERS:
+        return TraderType.USER
+    else:
+        raise ValueError(f"Invalid trader name: {name}")
 
 
 def validate_trader_name(name: str) -> str:
@@ -110,8 +130,9 @@ class TraderState:
     Matches trader_state_live table.
     """
     session_id: str = ""
+    trader_type: TraderType = TraderType.FUNDAMENTAL
     name: str = ""
-    system_prompt: str = ""
+    system_prompt: Optional[str] = None
     position: int = 0  # Positive = long, negative = short
     cash: Decimal = Decimal("1000.00")
     pnl: Decimal = Decimal("0")
@@ -119,3 +140,4 @@ class TraderState:
     def __post_init__(self):
         if self.name:
             validate_trader_name(self.name)
+            self.trader_type = get_trader_type(self.name)

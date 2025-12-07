@@ -5,11 +5,21 @@
 -- ENUM TYPES
 -- =============================================================================
 
--- Trader names: 1-5 for fundamental, sphere keys for noise
+-- Trader type
+CREATE TYPE trader_type AS ENUM ('fundamental', 'noise', 'user');
+
+-- Trader names by type:
+--   fundamental: conservative, momentum, historical, balanced, realtime
+--   noise: sphere keys from communities.py
+--   user: oliver, owen, skylar, tyler
 CREATE TYPE trader_name AS ENUM (
-    '1', '2', '3', '4', '5',
+    -- Fundamental traders
+    'conservative', 'momentum', 'historical', 'balanced', 'realtime',
+    -- Noise traders (spheres)
     'eacc_sovereign', 'america_first', 'blue_establishment', 'progressive_left',
-    'optimizer_idw', 'fintwit_market', 'builder_engineering', 'academic_research', 'osint_intel'
+    'optimizer_idw', 'fintwit_market', 'builder_engineering', 'academic_research', 'osint_intel',
+    -- User traders
+    'oliver', 'owen', 'skylar', 'tyler'
 );
 
 CREATE TYPE order_side AS ENUM ('buy', 'sell');
@@ -23,8 +33,9 @@ CREATE TYPE order_status AS ENUM ('open', 'filled', 'partially_filled', 'cancell
 CREATE TABLE IF NOT EXISTS trader_state_live (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    trader_type trader_type NOT NULL,
     name trader_name NOT NULL,
-    system_prompt TEXT NOT NULL,
+    system_prompt TEXT,
     -- Position & P/L
     position INTEGER NOT NULL DEFAULT 0,  -- Positive = long, negative = short
     cash DECIMAL(12, 2) NOT NULL DEFAULT 1000.00,  -- Starting cash
@@ -34,6 +45,7 @@ CREATE TABLE IF NOT EXISTS trader_state_live (
 );
 
 CREATE INDEX idx_trader_state_live_session ON trader_state_live(session_id);
+CREATE INDEX idx_trader_state_live_type ON trader_state_live(session_id, trader_type);
 
 
 -- =============================================================================
@@ -43,6 +55,7 @@ CREATE INDEX idx_trader_state_live_session ON trader_state_live(session_id);
 CREATE TABLE IF NOT EXISTS trader_prompts_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    trader_type trader_type NOT NULL,
     name trader_name NOT NULL,
     prompt_number INTEGER NOT NULL,
     system_prompt TEXT NOT NULL,
@@ -71,6 +84,7 @@ CREATE TABLE IF NOT EXISTS orderbook_live (
 
 CREATE INDEX idx_orderbook_live_session ON orderbook_live(session_id);
 CREATE INDEX idx_orderbook_live_price ON orderbook_live(session_id, side, price);
+CREATE INDEX idx_orderbook_live_trader_status ON orderbook_live(session_id, trader_name, status);
 
 
 -- =============================================================================
