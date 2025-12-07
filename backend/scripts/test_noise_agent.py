@@ -610,8 +610,8 @@ async def run_poll_mode(
                 
                 print(f"[{start_ts}] 🎯 prediction={prediction}% signal={signal} tweets={tweets} conf={confidence:.0%}")
                 
-                # Step 3: Market making - cancel old orders and place new ones
-                bid_result, ask_result = market_maker.place_market_making_orders(
+                # Step 3: Market making - atomically cancel, place, and match
+                mm_result = market_maker.place_market_making_orders(
                     session_id=session_id,
                     trader_name=trader_name,
                     prediction=prediction,
@@ -619,18 +619,18 @@ async def run_poll_mode(
                     quantity=quantity,
                 )
                 
-                bid_price = prediction - spread // 2
-                ask_price = prediction + spread // 2
-                
-                if bid_result and ask_result:
+                if "error" not in mm_result:
+                    bid_price = mm_result.get("bid_price", prediction - spread // 2)
+                    ask_price = mm_result.get("ask_price", prediction + spread // 2)
                     print(f"[{start_ts}] 📈 Market making: bid={bid_price}¢ ask={ask_price}¢ qty={quantity}")
                     
-                    # Step 4: Trigger order matching (uses SQL function, no Edge Function needed)
-                    match_result = market_maker.trigger_matching(session_id)
-                    if match_result.get("trades_count", 0) > 0:
-                        print(f"[{start_ts}] 🔄 Matched {match_result['trades_count']} trades, volume={match_result['volume']}")
+                    # Matching happens atomically in the SQL function
+                    if mm_result.get("trades_count", 0) > 0:
+                        print(f"[{start_ts}] 🔄 Matched {mm_result['trades_count']} trades, volume={mm_result['volume']}")
                 else:
-                    print(f"[{start_ts}] ⚠️  Market making failed (check Supabase connection)")
+                    bid_price = prediction - spread // 2
+                    ask_price = prediction + spread // 2
+                    print(f"[{start_ts}] ⚠️  Market making failed: {mm_result.get('error')}")
                 
                 # Print detailed result
                 print(json.dumps({

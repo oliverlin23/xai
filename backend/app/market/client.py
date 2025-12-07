@@ -520,9 +520,16 @@ class SupabaseMarketMaker:
         prediction: int,
         spread: int = 4,
         quantity: int = 100,
-    ) -> Tuple[Optional[Dict], Optional[Dict]]:
+    ) -> Dict[str, Any]:
         """
-        Cancel existing orders and place new bid/ask around prediction.
+        Atomically cancel existing orders, place new bid/ask, and trigger matching.
+        
+        This uses a single database transaction via the place_market_making_orders
+        SQL function, ensuring:
+        1. All existing orders are cancelled
+        2. New bid and ask orders are placed
+        3. Order matching runs immediately
+        4. All happens atomically (no race conditions)
         
         Args:
             session_id: Market session ID (UUID string)
@@ -532,24 +539,38 @@ class SupabaseMarketMaker:
             quantity: Order quantity
         
         Returns:
-            Tuple of (bid_result, ask_result)
+            Dict with: cancelled_count, bid_id, ask_id, bid_price, ask_price, 
+                       quantity, trades_count, volume
         """
-        # Cancel existing orders first
-        cancelled = self.cancel_all_orders(session_id, trader_name)
-        if cancelled > 0:
-            logger.info(f"Cancelled {cancelled} existing orders for {trader_name}")
-        
         # Calculate bid and ask prices
         half_spread = spread // 2
         bid_price = max(1, min(99, prediction - half_spread))
         ask_price = max(1, min(99, prediction + half_spread))
         
-        # Place bid (buy at lower price)
-        bid_result = self.place_order(session_id, trader_name, "buy", bid_price, quantity)
-        # Place ask (sell at higher price)
-        ask_result = self.place_order(session_id, trader_name, "sell", ask_price, quantity)
-        
-        return bid_result, ask_result
+        try:
+            # Call atomic SQL function that does cancel + place + match in one transaction
+            result = self._client.rpc("place_market_making_orders", {
+                "p_session_id": session_id,
+                "p_trader_name": trader_name,
+                "p_bid_price": bid_price,
+                "p_ask_price": ask_price,
+                "p_quantity": quantity,
+            }).execute()
+            
+            if result.data:
+                data = result.data
+                if data.get("cancelled_count", 0) > 0:
+                    logger.info(f"Cancelled {data['cancelled_count']} existing orders for {trader_name}")
+                logger.info(f"Placed buy order: {quantity} @ {bid_price} for {trader_name}")
+                logger.info(f"Placed sell order: {quantity} @ {ask_price} for {trader_name}")
+                if data.get("trades_count", 0) > 0:
+                    logger.info(f"Matched {data['trades_count']} trades, volume={data['volume']}")
+                return data
+            
+            return {"error": "No data returned from place_market_making_orders"}
+        except Exception as e:
+            logger.warning(f"Failed to place market making orders: {e}")
+            return {"error": str(e)}
     
     def trigger_matching(self, session_id: str) -> Dict[str, Any]:
         """
