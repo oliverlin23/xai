@@ -3,6 +3,28 @@ Application configuration using pydantic-settings
 """
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+import os
+
+
+def _find_env_file() -> str:
+    """Find .env file in backend directory or project root"""
+    # Get the directory where this config file is located
+    config_dir = Path(__file__).parent.parent.parent  # backend/
+    project_root = config_dir.parent  # project root
+    
+    # Try backend/.env first
+    backend_env = config_dir / ".env"
+    if backend_env.exists():
+        return str(backend_env)
+    
+    # Try project root/.env
+    root_env = project_root / ".env"
+    if root_env.exists():
+        return str(root_env)
+    
+    # Default to backend/.env (will fail if not found, but that's expected)
+    return str(backend_env)
 
 
 class Settings(BaseSettings):
@@ -28,7 +50,8 @@ class Settings(BaseSettings):
     grok_rate_limit_retry_attempts: int = 5  # Max retries for rate limits
 
     class Config:
-        env_file = "../.env"  # Read from project root
+        env_file = _find_env_file()
+        env_file_encoding = "utf-8"
         case_sensitive = False
         extra = "ignore"  # Ignore extra env vars
 

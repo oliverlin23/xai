@@ -36,6 +36,16 @@ class ConsensusOutput(BaseModel):
     )
 
 
+class RatingConsensusOutput(BaseModel):
+    """Output schema for merged rating+consensus agent (Phase 2, Agents 12+13 combined)"""
+    rated_factors: List[Dict[str, Any]] = Field(
+        description="All factors with importance scores (1-10)"
+    )
+    top_factors: List[Dict[str, Any]] = Field(
+        description="Top 5 factors selected for deep research (must be subset of rated_factors)"
+    )
+
+
 class HistoricalResearchOutput(BaseModel):
     """Output schema for historical research agents (Phase 3, Agents 14-18)"""
     factor_name: str
@@ -54,8 +64,17 @@ class CurrentDataOutput(BaseModel):
 
 class PredictionOutput(BaseModel):
     """Output schema for synthesis agent (Phase 4, Agent 24)"""
-    prediction: str
-    confidence: float = Field(ge=0.0, le=1.0)
+    prediction: str = Field(description="Binary choice (exactly one of the two options provided)")
+    prediction_probability: float = Field(
+        ge=0.0, 
+        le=1.0,
+        description="Probability of the event occurring (0.0-1.0). This is the actual forecast probability."
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the prediction_probability estimate (0.0-1.0). Based on evidence quality, thoroughness, and consistency."
+    )
     reasoning: str
     key_factors: List[str]
 

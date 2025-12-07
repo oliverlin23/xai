@@ -1,0 +1,72 @@
+{
+  "name": "Kalshi Market Predictions Eval Set",
+  "description": "Evaluation set based on Kalshi market resolutions with ground truth probabilities",
+  "version": "1.0.0",
+  "questions": [
+    {
+      "id": "kalshi_001",
+      "question_text": "Will Nicolas Maduro, the President of Venezuela, be out of office by the end of 2025?",
+      "question_type": "binary",
+      "resolution_criteria": "If Nicolás Maduro is no longer President of Venezuela before January 1, 2026, then the market resolves to Yes. Otherwise, the market will resolve to No.",
+      "ground_truth": 0.13,
+      "ground_truth_percentage": 13,
+      "source": "Kalshi",
+      "category": "Political"
+    },
+    {
+      "id": "kalshi_002",
+      "question_text": "Will the US Federal Reserve choose to reduce interest rates by 25 basis points in December?",
+      "question_type": "binary",
+      "resolution_criteria": "If the Federal Reserve does a Cut of 25bps on December 10, 2025, then the market resolves to Yes. Otherwise, the market will resolve to No.",
+      "ground_truth": 0.90,
+      "ground_truth_percentage": 90,
+      "source": "Kalshi",
+      "category": "Economic"
+    },
+    {
+      "id": "kalshi_003",
+      "question_text": "Will Abelardo de la Espriella win Colombia's Presidential Election in 2026?",
+      "question_type": "binary",
+      "resolution_criteria": "If Abelardo de la Espriella wins the Colombian presidential election on Sunday, March 8, 2026, the market resolves to Yes. Otherwise, the market will resolve to No.",
+      "ground_truth": 0.35,
+      "ground_truth_percentage": 35,
+      "source": "Kalshi",
+      "category": "Political"
+    },
+    {
+      "id": "kalshi_004",
+      "question_text": "Will NVIDIA be the world's largest company at the end of June 2026?",
+      "question_type": "binary",
+      "resolution_criteria": "If NVIDIA (NVDA) is largest company in the world by market cap on June 30, 2026, the market will resolve to Yes. Otherwise, the market will resolve to No.",
+      "ground_truth": 0.50,
+      "ground_truth_percentage": 50,
+      "source": "Kalshi",
+      "category": "Market/Financial"
+    },
+    {
+      "id": "kalshi_005",
+      "question_text": "Will OpenAI IPO by the end of 2026?",
+      "question_type": "binary",
+      "resolution_criteria": "If OpenAI completes an Initial Public Offering (IPO) by December 31, 2026, as confirmed by official company announcements and credible news sources, the market resolves to Yes. Otherwise, the market will resolve to No.",
+      "ground_truth": 0.33,
+      "ground_truth_percentage": 33,
+      "source": "Kalshi",
+      "category": "Market/Financial"
+    }
+  ],
+  "metadata": {
+    "total_questions": 5,
+    "date_created": "2025-01-27",
+    "ground_truth_range": {
+      "min": 0.13,
+      "max": 0.90,
+      "mean": 0.442
+    },
+    "categories": {
+      "Political": 2,
+      "Economic": 1,
+      "Market/Financial": 2
+    }
+  }
+}
+

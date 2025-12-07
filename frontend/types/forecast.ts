@@ -11,7 +11,8 @@ export interface Factor {
 
 export interface PredictionResult {
   prediction: string
-  confidence: number
+  prediction_probability: number  // Probability of the event occurring (0.0-1.0)
+  confidence: number  // Confidence in the probability estimate, based on evidence quality (0.0-1.0)
   reasoning: string
   key_factors: string[]
   total_duration_seconds?: number

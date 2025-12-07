@@ -23,6 +23,9 @@ class Session(Base):
     started_at = Column(TIMESTAMP)
     completed_at = Column(TIMESTAMP)
     prediction_result = Column(JSONB)
+    prediction_probability = Column(DECIMAL(5, 4))  # Probability of event (0.0-1.0)
+    confidence = Column(DECIMAL(5, 4))  # Confidence in probability estimate (0.0-1.0)
+    total_duration_seconds = Column(DECIMAL(10, 2))  # Total execution time in seconds
     total_cost_tokens = Column(Integer, default=0)
 
 

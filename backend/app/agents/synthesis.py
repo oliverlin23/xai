@@ -27,6 +27,26 @@ class SynthesisAgent(BaseAgent):
         factors = input_data.get("factors", [])
         research_data = input_data.get("research", {})
         
+        # Extract binary options from question
+        # For binary questions, default to Yes/No, but try to infer from question structure
+        if question_type == "binary":
+            binary_options = ["Yes", "No"]
+            # Try to extract explicit options if question format is "X or Y?"
+            # For questions like "Will X happen?", use Yes/No
+            # For questions with explicit options, extract them
+            question_lower = question_text.lower().strip()
+            if " or " in question_lower:
+                # Try to extract options from "X or Y?" format
+                parts = question_lower.split(" or ")
+                if len(parts) == 2:
+                    # Extract the options (may need cleaning)
+                    opt1 = parts[0].split()[-1].strip("?")
+                    opt2 = parts[1].strip("?")
+                    if opt1 and opt2 and len(opt1) < 50 and len(opt2) < 50:
+                        binary_options = [opt1.capitalize(), opt2.capitalize()]
+        else:
+            binary_options = None
+        
         # Format factors with research
         factors_text = ""
         for factor in factors:
@@ -41,10 +61,20 @@ Research Summary:
 ---
 """
         
+        binary_options_text = ""
+        if question_type == "binary" and binary_options:
+            binary_options_text = f"""
+BINARY OPTIONS (you must choose exactly one):
+- Option 1: {binary_options[0]}
+- Option 2: {binary_options[1]}
+
+Your prediction field MUST be exactly "{binary_options[0]}" or "{binary_options[1]}" - no variations.
+
+"""
+        
         return f"""Forecasting Question: {question_text}
 Question Type: {question_type}
-
-Research Summary for Top Factors:
+{binary_options_text}Research Summary for Top Factors:
 {factors_text}
 
 Synthesize all this research into a coherent prediction.
@@ -55,8 +85,12 @@ Apply superforecasting principles:
 - Express uncertainty calibrated to evidence
 
 Provide:
-1. A clear prediction statement
-2. Confidence score (0-1)
-3. Detailed reasoning
-4. List of key factors that influenced your prediction"""
+1. A prediction that is exactly one of the binary options above
+2. prediction_probability (0-1): The probability of the event occurring
+3. confidence (0-1): Your confidence in that probability estimate, based on evidence quality, thoroughness, and consistency
+4. Detailed reasoning that explains both the probability and your confidence level
+5. List of key factors that influenced your prediction
+
+Remember: prediction_probability answers "What's the chance?" and confidence answers "How sure are you about that chance?"
+"""
 

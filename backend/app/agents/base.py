@@ -104,9 +104,15 @@ class BaseAgent(ABC):
                 logger.info(f"[{self.agent_name}] User message built ({len(user_message)} chars)")
                 self.agent_logger.info(f"[{self.agent_name}] User message: {user_message[:200]}...")
 
+                # Determine if web search should be enabled (Phase 1 and Phase 3)
+                enable_web_search = self.phase in ["factor_discovery", "research"]
+                
                 # Call Grok API with structured output
                 logger.info(f"[{self.agent_name}] Calling grok_service.chat_completion()")
                 self.agent_logger.info(f"[{self.agent_name}] Calling Grok API")
+                if enable_web_search:
+                    logger.info(f"[{self.agent_name}] Web search enabled for phase: {self.phase}")
+                    self.agent_logger.info(f"[{self.agent_name}] Web search enabled")
                 self.agent_logger.info(f"[{self.agent_name}] System prompt length: {len(self.system_prompt)} chars")
                 self.agent_logger.info(f"[{self.agent_name}] Output schema: {self.output_schema.__name__}")
                 logger.info(f"[{self.agent_name}] System prompt length: {len(self.system_prompt)} chars")
@@ -115,12 +121,24 @@ class BaseAgent(ABC):
                     self.grok_service.chat_completion(
                         system_prompt=self.system_prompt,
                         user_message=user_message,
-                        output_schema=self.output_schema
+                        output_schema=self.output_schema,
+                        enable_web_search=enable_web_search
                     ),
                     timeout=self.timeout_seconds
                 )
                 logger.info(f"[{self.agent_name}] Grok API call successful")
                 self.agent_logger.info(f"[{self.agent_name}] Grok API call successful")
+
+                # Log web search usage if available
+                if enable_web_search:
+                    num_sources = response.get("num_sources_used")
+                    web_indicators = response.get("web_search_indicators")
+                    if num_sources is not None:
+                        logger.info(f"[{self.agent_name}] Web search used {num_sources} sources")
+                        self.agent_logger.info(f"[{self.agent_name}] Web search used {num_sources} sources")
+                    elif web_indicators:
+                        logger.info(f"[{self.agent_name}] Web search indicators: URLs={web_indicators.get('has_urls')}, Sources={web_indicators.get('has_sources')}")
+                        self.agent_logger.info(f"[{self.agent_name}] Web search indicators: URLs={web_indicators.get('has_urls')}, Sources={web_indicators.get('has_sources')}")
 
                 # Track tokens
                 self.tokens_used = response["total_tokens"]
@@ -138,6 +156,27 @@ class BaseAgent(ABC):
                 self.agent_logger.info(f"[{self.agent_name}] Output data: {str(validated_output.model_dump())[:500]}...")
 
                 self.output_data = validated_output.model_dump()
+                
+                # Store web search metadata in output_data for frontend display
+                if enable_web_search:
+                    num_sources = response.get("num_sources_used")
+                    web_indicators = response.get("web_search_indicators")
+                    if num_sources is not None:
+                        self.output_data["_web_search_metadata"] = {
+                            "sources_used": num_sources,
+                            "web_search_enabled": True
+                        }
+                    elif web_indicators:
+                        self.output_data["_web_search_metadata"] = {
+                            "web_search_enabled": True,
+                            "has_urls": web_indicators.get("has_urls", False),
+                            "has_sources": web_indicators.get("has_sources", False)
+                        }
+                    else:
+                        self.output_data["_web_search_metadata"] = {
+                            "web_search_enabled": True
+                        }
+                
                 self.status = "completed"
                 self.execution_end_time = time.time()
                 self.execution_duration = self.execution_end_time - self.execution_start_time

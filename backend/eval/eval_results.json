@@ -1,0 +1,48 @@
+{
+  "eval_set": "Kalshi Market Predictions Eval Set",
+  "eval_date": "2025-12-07T02:51:01.808952",
+  "agent_counts": {
+    "phase_1_discovery": 5,
+    "phase_2_validation": 2,
+    "phase_3_research": 5,
+    "phase_4_synthesis": 1
+  },
+  "summary": {
+    "total_questions": 1,
+    "successful_forecasts": 1,
+    "failed_forecasts": 0,
+    "mean_brier_score": 0.04,
+    "std_brier_score": 0,
+    "mean_calibration_error": 0.07,
+    "max_calibration_error": 0.07,
+    "min_calibration_error": 0.07,
+    "std_calibration_error": 0,
+    "direction_accuracy": 1.0,
+    "total_tokens": 74061,
+    "mean_tokens": 74061.0,
+    "mean_duration_seconds": 90.38,
+    "min_duration_seconds": 90.38,
+    "max_duration_seconds": 90.38
+  },
+  "results": [
+    {
+      "question_id": "kalshi_001",
+      "question_text": "Will Nicolas Maduro, the President of Venezuela, be out of office by the end of 2025?",
+      "ground_truth": 0.13,
+      "ground_truth_percentage": 13,
+      "predicted_prob": 0.19999999999999996,
+      "predicted_percentage": 20.0,
+      "prediction": "No",
+      "prediction_probability": null,
+      "confidence": 0.8,
+      "brier_score": 0.04,
+      "calibration_error": 0.07,
+      "session_id": "7ddd780e-d885-42b7-8124-e0ec6965268d",
+      "total_duration_seconds": 90.38,
+      "total_cost_tokens": 74061,
+      "status": "completed",
+      "eval_duration_seconds": 90.81
+    }
+  ],
+  "total_eval_duration_seconds": 90.81
+}

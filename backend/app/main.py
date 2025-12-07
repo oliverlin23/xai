@@ -173,14 +173,26 @@ async def get_forecast(forecast_id: str):
     
     logger.info(f"Returning forecast data: {len(agent_logs)} logs, {len(factors)} factors")
     
-    # Extract duration from prediction_result if available
+    # Extract duration and prediction fields - prefer separate columns, fallback to JSONB
     prediction_result = session.get("prediction_result")
-    total_duration_seconds = None
+    
+    # Get total_duration_seconds from column first, then fallback to JSONB
+    total_duration_seconds = session.get("total_duration_seconds")
+    if total_duration_seconds is None and prediction_result and isinstance(prediction_result, dict):
+        total_duration_seconds = prediction_result.get("total_duration_seconds")
+    
+    # Get prediction_probability and confidence from columns first, then fallback to JSONB
+    prediction_probability = session.get("prediction_probability")
+    confidence = session.get("confidence")
+    if prediction_probability is None and prediction_result and isinstance(prediction_result, dict):
+        prediction_probability = prediction_result.get("prediction_probability")
+    if confidence is None and prediction_result and isinstance(prediction_result, dict):
+        confidence = prediction_result.get("confidence")
+    
+    # Format duration for display
     total_duration_formatted = None
     phase_durations = None
-    
     if prediction_result and isinstance(prediction_result, dict):
-        total_duration_seconds = prediction_result.get("total_duration_seconds")
         total_duration_formatted = prediction_result.get("total_duration_formatted")
         phase_durations = prediction_result.get("phase_durations")
     
@@ -201,10 +213,16 @@ async def get_forecast(forecast_id: str):
     
     # Add duration fields if available
     if total_duration_seconds is not None:
-        response["total_duration_seconds"] = total_duration_seconds
+        response["total_duration_seconds"] = float(total_duration_seconds) if total_duration_seconds else None
         response["total_duration_formatted"] = total_duration_formatted
     if phase_durations:
         response["phase_durations"] = phase_durations
+    
+    # Add prediction_probability and confidence if available (from columns or JSONB)
+    if prediction_probability is not None:
+        response["prediction_probability"] = float(prediction_probability) if prediction_probability else None
+    if confidence is not None:
+        response["confidence"] = float(confidence) if confidence else None
     
     return response
 

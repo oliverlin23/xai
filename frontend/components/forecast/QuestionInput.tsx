@@ -20,7 +20,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [agentCounts, setAgentCounts] = useState<AgentCounts>({
     phase_1_discovery: 10,
-    phase_2_validation: 3,
+    phase_2_validation: 2,
     phase_3_research: 10,
     phase_4_synthesis: 1,
   })
@@ -80,7 +80,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         {showAdvanced && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
             <p className="text-sm text-gray-600 mb-3">
-              Configure how many agents run in each phase (default: 10, 3, 10, 1 = 24 total)
+              Configure how many agents run in each phase (default: 10, 2, 10, 1 = 23 total)
             </p>
             
             <div className="grid grid-cols-2 gap-4">
@@ -107,13 +107,13 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                 <input
                   id="phase2"
                   type="number"
-                  min="3"
-                  max="3"
+                  min="2"
+                  max="2"
                   value={agentCounts.phase_2_validation}
-                  onChange={(e) => setAgentCounts({...agentCounts, phase_2_validation: 3})}
+                  onChange={(e) => setAgentCounts({...agentCounts, phase_2_validation: 2})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-100"
                   disabled={true}
-                  title="Always 3 agents (validator, rater, consensus)"
+                  title="Always 2 agents (validator, rating_consensus merged)"
                 />
               </div>
               

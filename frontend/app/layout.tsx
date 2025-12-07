@@ -10,7 +10,7 @@ const pressStart = Press_Start_2P({
 
 export const metadata: Metadata = {
   title: "Superforecaster - AI-Powered Predictions",
-  description: "24-agent superforecasting system powered by Grok AI",
+  description: "23-agent superforecasting system powered by Grok AI",
 }
 
 export default function RootLayout({

@@ -101,7 +101,10 @@ class SessionRepository(BaseRepository):
         status: str,
         phase: Optional[str] = None,
         prediction_result: Optional[Dict[str, Any]] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
+        prediction_probability: Optional[float] = None,
+        confidence: Optional[float] = None,
+        total_duration_seconds: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Update session status and optionally phase/prediction
@@ -110,8 +113,11 @@ class SessionRepository(BaseRepository):
             session_id: Session ID
             status: New status (running, completed, failed)
             phase: Optional phase name
-            prediction_result: Optional prediction result dict
+            prediction_result: Optional prediction result dict (still stored in JSONB for full details)
             error_message: Optional error message if failed
+            prediction_probability: Optional probability of event (0.0-1.0) - stored as separate column
+            confidence: Optional confidence in probability estimate (0.0-1.0) - stored as separate column
+            total_duration_seconds: Optional total execution time in seconds - stored as separate column
         
         Returns:
             Updated session record
@@ -126,6 +132,16 @@ class SessionRepository(BaseRepository):
         
         if error_message:
             data["error_message"] = error_message
+        
+        # Store prediction_probability, confidence, and duration as separate columns for easier querying
+        if prediction_probability is not None:
+            data["prediction_probability"] = float(prediction_probability)
+        
+        if confidence is not None:
+            data["confidence"] = float(confidence)
+        
+        if total_duration_seconds is not None:
+            data["total_duration_seconds"] = float(total_duration_seconds)
         
         if status in ["completed", "failed"]:
             data["completed_at"] = datetime.utcnow().isoformat()

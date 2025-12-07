@@ -22,13 +22,16 @@ class DiscoveryAgent(BaseAgent):
         self.agent_number = agent_number
     
     async def build_user_message(self, input_data: Dict[str, Any]) -> str:
-        """Build user message from input data"""
+        """Build user message from input data with web search instruction"""
         question_text = input_data.get("question_text", "")
         question_type = input_data.get("question_type", "binary")
         
         return f"""Forecasting Question: {question_text}
 Question Type: {question_type}
 
-Discover up to 5 relevant factors that could influence this outcome. 
-Consider diverse perspectives and categories. Be creative and thorough."""
+First, search the web for current information, trends, and recent developments related to this forecasting question. Use the search results to inform your factor discovery.
+
+Then, discover up to 5 relevant factors that could influence this outcome. 
+Consider diverse perspectives and categories. Be creative and thorough.
+Ensure your factors reflect current information and trends from your web search."""
 

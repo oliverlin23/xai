@@ -112,7 +112,8 @@ class GrokService:
         temperature: float = 0.7,
         max_tokens: int = 4000,
         tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[str] = None
+        tool_choice: Optional[str] = None,
+        enable_web_search: bool = False
     ) -> Dict[str, Any]:
         """
         Send chat completion request to Grok API with rate limit handling
@@ -125,6 +126,7 @@ class GrokService:
             max_tokens: Maximum tokens in response
             tools: List of tool definitions for function calling (MCP tools)
             tool_choice: Tool choice mode ("auto", "none", or {"type": "function", "function": {"name": "tool_name"}})
+            enable_web_search: Enable Grok's built-in web search (uses search_parameters API)
 
         Returns:
             Dict with 'content', 'prompt_tokens', 'completion_tokens', 'total_tokens'
@@ -144,6 +146,16 @@ class GrokService:
             "temperature": temperature,
             "max_tokens": max_tokens
         }
+
+        # Enable web search if requested (Grok API parameter)
+        # Use extra_body to pass custom parameters not in OpenAI SDK
+        if enable_web_search:
+            kwargs["extra_body"] = {
+                "search_parameters": {
+                    "mode": "on"
+                }
+            }
+            logger.info("[GROK API] Web search enabled via search_parameters in extra_body")
 
         # Add tools if provided (for MCP/function calling)
         if tools:
@@ -172,6 +184,54 @@ class GrokService:
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens
             }
+
+            # Check for web search metadata in response
+            # Grok API may include num_sources_used in usage object when web search is enabled
+            num_sources = None
+            if enable_web_search:
+                # Try multiple ways to access num_sources_used
+                if hasattr(response.usage, 'num_sources_used'):
+                    num_sources = response.usage.num_sources_used
+                    logger.info(f"[GROK API] Found num_sources_used via attribute: {num_sources}")
+                elif hasattr(response, 'usage') and isinstance(response.usage, dict):
+                    num_sources = response.usage.get('num_sources_used')
+                    if num_sources is not None:
+                        logger.info(f"[GROK API] Found num_sources_used via dict access: {num_sources}")
+                
+                # Log full usage object structure for debugging (first time per session)
+                if not hasattr(self, '_logged_usage_structure'):
+                    logger.info(f"[GROK API] Usage object type: {type(response.usage)}")
+                    if hasattr(response.usage, '__dict__'):
+                        logger.info(f"[GROK API] Usage object attributes: {list(response.usage.__dict__.keys())}")
+                    elif hasattr(response.usage, '__slots__'):
+                        logger.info(f"[GROK API] Usage object slots: {response.usage.__slots__}")
+                    elif isinstance(response.usage, dict):
+                        logger.info(f"[GROK API] Usage dict keys: {list(response.usage.keys())}")
+                    # Try to get all attributes
+                    try:
+                        attrs = [attr for attr in dir(response.usage) if not attr.startswith('_')]
+                        logger.info(f"[GROK API] Usage object dir() attributes: {attrs}")
+                    except:
+                        pass
+                    self._logged_usage_structure = True
+                
+                if num_sources is not None:
+                    result["num_sources_used"] = num_sources
+                    logger.info(f"[GROK API] ✅ Web search used {num_sources} sources (raw value from API)")
+                else:
+                    logger.warning(f"[GROK API] ⚠️ Web search enabled but num_sources_used not found in response")
+                    # Check if content contains URLs or source indicators (heuristic)
+                    content = message.content or ""
+                    has_urls = "http" in content.lower() or "www." in content.lower()
+                    has_sources = any(indicator in content.lower() for indicator in [
+                        "source:", "according to", "reported by", "cited", 
+                        "per ", "as reported", "from ", "according"
+                    ])
+                    if has_urls or has_sources:
+                        logger.info(f"[GROK API] Web search likely used (heuristic: URLs={has_urls}, Sources mentioned={has_sources})")
+                        result["web_search_indicators"] = {"has_urls": has_urls, "has_sources": has_sources}
+                    else:
+                        logger.info("[GROK API] Web search enabled but no clear indicators found")
 
             # Include tool calls if present
             if message.tool_calls:

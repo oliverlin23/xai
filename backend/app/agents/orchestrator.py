@@ -7,8 +7,7 @@ from app.db import SessionRepository, AgentLogRepository, FactorRepository
 from app.agents import (
     DiscoveryAgent,
     ValidatorAgent,
-    RaterAgent,
-    ConsensusAgent,
+    RatingConsensusAgent,
     HistoricalResearchAgent,
     CurrentDataResearchAgent,
     SynthesisAgent
@@ -25,7 +24,7 @@ class AgentOrchestrator:
     """
     Orchestrates the 4-phase agent workflow:
     Phase 1: Factor Discovery (10 agents, parallel)
-    Phase 2: Validation (3 agents, sequential)
+    Phase 2: Validation (2 agents, sequential: Validator → RatingConsensus merged)
     Phase 3: Research (10 agents, parallel)
     Phase 4: Synthesis (1 agent)
     """
@@ -43,13 +42,13 @@ class AgentOrchestrator:
         if agent_counts:
             logger.info(f"[ORCHESTRATOR] Agent counts provided: {agent_counts}")
             self.phase_1_count = agent_counts.get("phase_1_discovery", 10)
-            self.phase_2_count = agent_counts.get("phase_2_validation", 3)  # Always 3 (validator, rater, consensus)
+            self.phase_2_count = agent_counts.get("phase_2_validation", 2)  # Always 2 (validator, rating_consensus merged)
             self.phase_3_count = agent_counts.get("phase_3_research", 10)  # Split into historical + current
             self.phase_4_count = agent_counts.get("phase_4_synthesis", 1)  # Always 1
         else:
             logger.info("[ORCHESTRATOR] Using default agent counts")
             self.phase_1_count = 10
-            self.phase_2_count = 3
+            self.phase_2_count = 2
             self.phase_3_count = 10
             self.phase_4_count = 1
         
@@ -166,7 +165,14 @@ class AgentOrchestrator:
 
             # Update session with final result (including duration)
             logger.info("[ORCHESTRATOR] Updating session status to 'completed'")
-            await self.update_session_status("completed", "synthesis", final_prediction)
+            await self.update_session_status(
+                "completed", 
+                "synthesis", 
+                final_prediction,
+                prediction_probability=final_prediction.get("prediction_probability"),
+                confidence=final_prediction.get("confidence"),
+                total_duration_seconds=round(workflow_duration, 2)
+            )
             
             logger.info("=" * 60)
             logger.info("[ORCHESTRATOR] Workflow completed successfully!")
@@ -192,7 +198,11 @@ class AgentOrchestrator:
                 error_data["total_duration_formatted"] = f"{minutes}m {seconds}s"
             else:
                 error_data["total_duration_formatted"] = f"{seconds}s"
-            await self.update_session_status("failed", error=str(e))
+            await self.update_session_status(
+                "failed", 
+                error=str(e),
+                total_duration_seconds=round(workflow_duration, 2)
+            )
             raise
 
     async def run_phase_1(self):
@@ -267,7 +277,7 @@ class AgentOrchestrator:
         logger.info(f"[PHASE 1] Phase complete: {len(self.all_factors)} total factors discovered")
 
     async def run_phase_2(self):
-        """Phase 2: Run 3 validation agents sequentially"""
+        """Phase 2: Run 2 validation agents sequentially (Validator → RatingConsensus merged)"""
         # Agent 11: Validator
         log_id = self.create_agent_log("validator", "validation")
         try:
@@ -310,16 +320,21 @@ class AgentOrchestrator:
             self.update_agent_log(log_id, "failed", error_message=str(e))
             raise
         
-        # Agent 12: Rater
-        log_id = self.create_agent_log("rater", "validation")
+        # Agent 12+13 (merged): RatingConsensus - Scores all factors AND selects top 5
+        log_id = self.create_agent_log("rating_consensus", "validation")
         try:
-            rater = RaterAgent(session_id=self.session_id)
-            output = await rater.execute({
+            rating_consensus = RatingConsensusAgent(session_id=self.session_id)
+            output = await rating_consensus.execute({
                 "question_text": self.question_text,
                 "factors": self.validated_factors
             })
-            self.update_agent_log(log_id, "completed", output, rater.tokens_used)
+            self.update_agent_log(log_id, "completed", output, rating_consensus.tokens_used)
+            
+            # Extract rated factors and top factors from merged output
             rated_factors = output.get("rated_factors", [])
+            top_factors_raw = output.get("top_factors", [])
+            
+            logger.info(f"[PHASE 2] RatingConsensus returned {len(rated_factors)} rated factors and {len(top_factors_raw)} top factors")
             
             # Update factors with importance scores
             for rated_factor in rated_factors:
@@ -332,25 +347,6 @@ class AgentOrchestrator:
                         factor_id=factors[0]["id"],
                         importance_score=rated_factor.get("importance_score")
                     )
-        except Exception as e:
-            self.update_agent_log(log_id, "failed", error_message=str(e))
-            raise
-        
-        # Agent 13: Consensus Builder
-        log_id = self.create_agent_log("consensus", "validation")
-        try:
-            consensus = ConsensusAgent(session_id=self.session_id)
-            all_factors = self.factor_repo.get_session_factors(
-                self.session_id,
-                order_by_importance=True
-            )
-            output = await consensus.execute({
-                "question_text": self.question_text,
-                "factors": all_factors
-            })
-            self.update_agent_log(log_id, "completed", output, consensus.tokens_used)
-            top_factors_raw = output.get("top_factors", [])
-            logger.info(f"[PHASE 2] Consensus returned {len(top_factors_raw)} factors")
             
             # Normalize top_factors format
             self.top_factors = []
@@ -371,7 +367,7 @@ class AgentOrchestrator:
             for i, factor in enumerate(self.top_factors, 1):
                 logger.info(f"[PHASE 2]   {i}. {factor.get('name', 'Unknown')} (importance: {factor.get('importance_score', 'N/A')})")
         except Exception as e:
-            logger.error(f"[PHASE 2] Consensus agent failed: {e}", exc_info=True)
+            logger.error(f"[PHASE 2] RatingConsensus agent failed: {e}", exc_info=True)
             self.update_agent_log(log_id, "failed", error_message=str(e))
             raise
 
@@ -456,11 +452,16 @@ class AgentOrchestrator:
             for i in range(num_current)
         ]
         
-        logger.info(f"[PHASE 3] Running {len(historical_tasks)} historical and {len(current_tasks)} current research agents")
+        logger.info(f"[PHASE 3] Running {len(historical_tasks)} historical and {len(current_tasks)} current research agents concurrently")
         logger.info(f"[PHASE 3] Researching {len(factors_to_research)} factors")
         
-        historical_results = await asyncio.gather(*historical_tasks, return_exceptions=True)
-        current_results = await asyncio.gather(*current_tasks, return_exceptions=True)
+        # Run all research agents concurrently (both historical and current)
+        all_tasks = historical_tasks + current_tasks
+        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
+        
+        # Split results back into historical and current
+        historical_results = all_results[:len(historical_tasks)]
+        current_results = all_results[len(historical_tasks):]
         
         # Log any exceptions
         for i, result in enumerate(historical_results):
@@ -594,13 +595,15 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
             # Format prediction result
             prediction_result = {
                 "prediction": output.get("prediction", ""),
-                "confidence": output.get("confidence", 0.5),
+                "prediction_probability": output.get("prediction_probability", output.get("confidence", 0.5)),  # Fallback to confidence for backward compatibility
+                "confidence": output.get("confidence", 0.7),  # Default confidence if not provided
                 "reasoning": output.get("reasoning", ""),
                 "key_factors": output.get("key_factors", [])
             }
             
             logger.info(f"[PHASE 4] Prediction: {prediction_result.get('prediction', 'N/A')[:100]}...")
-            logger.info(f"[PHASE 4] Confidence: {prediction_result.get('confidence', 0.5)}")
+            logger.info(f"[PHASE 4] Prediction Probability: {prediction_result.get('prediction_probability', 'N/A')}")
+            logger.info(f"[PHASE 4] Confidence (in probability estimate): {prediction_result.get('confidence', 'N/A')}")
             
             return prediction_result
         except Exception as e:
@@ -613,20 +616,35 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
         status: str,
         phase: str = None,
         prediction_result: Dict[str, Any] = None,
-        error: str = None
+        error: str = None,
+        prediction_probability: float = None,
+        confidence: float = None,
+        total_duration_seconds: float = None
     ):
         """
         Update session status and phase
         
         DB Operation: UPDATE sessions
         See: app/agents/db_mapping.py for detailed documentation
+        
+        Args:
+            status: Session status (running, completed, failed)
+            phase: Optional phase name
+            prediction_result: Optional full prediction result dict (stored in JSONB)
+            error: Optional error message
+            prediction_probability: Optional probability of event (0.0-1.0) - stored as separate column
+            confidence: Optional confidence in probability estimate (0.0-1.0) - stored as separate column
+            total_duration_seconds: Optional total execution time - stored as separate column
         """
         self.session_repo.update_status(
             session_id=self.session_id,
             status=status,
             phase=phase,
             prediction_result=prediction_result,
-            error_message=error
+            error_message=error,
+            prediction_probability=prediction_probability,
+            confidence=confidence,
+            total_duration_seconds=total_duration_seconds
         )
         
         # Note: Error handling would go here if needed

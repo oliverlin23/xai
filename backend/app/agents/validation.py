@@ -1,18 +1,20 @@
 """
-Phase 2: Validation Agents (Agents 11-13)
-Sequential agents: Validator → Rater → Consensus Builder
+Phase 2: Validation Agents (Agents 11-12)
+Sequential agents: Validator → RaterConsensus (merged)
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
 from app.agents.prompts import (
     VALIDATOR_AGENT_PROMPT,
     RATER_AGENT_PROMPT,
-    CONSENSUS_AGENT_PROMPT
+    CONSENSUS_AGENT_PROMPT,
+    RATING_CONSENSUS_AGENT_PROMPT
 )
 from app.schemas import (
     FactorValidationOutput,
     FactorRatingOutput,
-    ConsensusOutput
+    ConsensusOutput,
+    RatingConsensusOutput
 )
 
 
@@ -114,4 +116,37 @@ Rated Factors ({len(factors)} total):
 Select the top 5 most important factors for deep research.
 Consider: importance scores, category diversity, research feasibility.
 Return exactly 5 factors."""
+
+
+class RatingConsensusAgent(BaseAgent):
+    """Agent 12+13 (merged): Rates all factors AND selects top 5 in one call"""
+    
+    def __init__(self, session_id: Optional[str] = None):
+        super().__init__(
+            agent_name="rating_consensus",
+            phase="validation",
+            system_prompt=RATING_CONSENSUS_AGENT_PROMPT,
+            output_schema=RatingConsensusOutput,
+            session_id=session_id
+        )
+    
+    async def build_user_message(self, input_data: Dict[str, Any]) -> str:
+        """Build user message with validated factors"""
+        factors = input_data.get("factors", [])
+        question_text = input_data.get("question_text", "")
+        
+        factors_text = "\n".join([
+            f"- {f.get('name', 'Unknown')}: {f.get('description', '')} ({f.get('category', 'unknown')})"
+            for f in factors
+        ])
+        
+        return f"""Forecasting Question: {question_text}
+
+Validated Factors ({len(factors)} total):
+{factors_text}
+
+1. Score each factor 1-10 based on causal mechanism strength, historical precedence, current relevance, and impact magnitude.
+2. Select the top 5 factors for deep research, balancing importance scores with category diversity and causal mechanism diversity.
+
+Output both rated_factors (all factors with scores) and top_factors (exactly 5 selected factors)."""
 
