@@ -18,10 +18,16 @@ class Settings(BaseSettings):
     # Agent Configuration
     agent_timeout_seconds: int = 300
     max_retries: int = 3
+    
+    # Grok API Rate Limiting
+    grok_max_requests_per_minute: int = 60  # Conservative default
+    grok_max_concurrent_requests: int = 10  # Limit parallel requests
+    grok_rate_limit_retry_attempts: int = 5  # Max retries for rate limits
 
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra env vars
 
 
 @lru_cache()

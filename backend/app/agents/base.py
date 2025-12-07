@@ -102,6 +102,18 @@ class BaseAgent(ABC):
 
             except Exception as e:
                 self.error_message = str(e)
+                
+                # Rate limit errors are already handled by GrokService with retries
+                # But if they still fail after all retries, we should log and continue
+                if "rate limit" in str(e).lower() or "429" in str(e):
+                    logger.warning(f"Agent {self.agent_name} hit rate limit: {e}")
+                    # GrokService already retried, so if we get here, it's a persistent issue
+                    if attempt < self.max_retries - 1:
+                        # Additional backoff on top of GrokService's retries
+                        await asyncio.sleep(5 * (2 ** attempt))  # Longer backoff
+                        continue
+                
+                # For other errors, use standard exponential backoff
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
                     continue
