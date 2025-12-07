@@ -55,8 +55,8 @@ export default function Page() {
         <div className="w-full max-w-3xl flex flex-col items-center gap-8">
           <div
             className="relative w-full rounded-xl border-4 border-[#2d3748] shadow-[0_20px_50px_rgba(0,0,0,0.45)] overflow-hidden"
-            style={{
-              backgroundImage: `
+          style={{
+            backgroundImage: `
                 linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 40%),
                 linear-gradient(90deg, rgba(37,46,61,0.9) 0%, rgba(30,38,50,0.9) 100%),
                 repeating-linear-gradient(0deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 4px, rgba(0,0,0,0.05) 4px, rgba(0,0,0,0.05) 8px)
@@ -74,6 +74,8 @@ export default function Page() {
                 <div key={i} className="w-3 h-3 rounded-full bg-white/70 shadow-inner shadow-black/60" />
               ))}
             </div>
+            {/* Ensure bottom-right rivet is present */}
+            <div className="absolute bottom-3 right-3 w-3 h-3 rounded-full bg-white/70 shadow-inner shadow-black/60" />
 
             <div className="relative px-8 py-10 text-center">
               <div
