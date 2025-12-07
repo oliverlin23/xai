@@ -104,7 +104,7 @@ export default function Page() {
           <div className="w-full flex justify-center">
             <form
               onSubmit={handleFormSubmit}
-              className="w-full max-w-2xl flex flex-col gap-3"
+              className="w-full max-w-2xl flex flex-col items-center gap-3"
             >
               <div className="relative w-full border-4 border-[#2d3748] rounded-lg bg-white shadow-[0_12px_30px_rgba(0,0,0,0.45)] focus-within:border-[#2d7dd2] transition-colors">
                 <textarea
@@ -129,7 +129,7 @@ export default function Page() {
               <button
                 type="submit"
                 disabled={!query.trim() || isLoading}
-                className={`${pressStart.className} w-full sm:w-auto self-end px-6 py-3 rounded-lg border-4 border-[#2d3748] bg-[#2d7dd2] text-[#f7f5f0] uppercase tracking-[0.15em] shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed`}
+                className={`${pressStart.className} w-full sm:w-auto self-center px-6 py-3 rounded-lg border-4 border-[#2d3748] bg-[#2d7dd2] text-[#f7f5f0] uppercase tracking-[0.15em] shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed`}
               >
                 Enter
               </button>

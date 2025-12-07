@@ -36,8 +36,8 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 text-[#0f172a]">
-      <div>
+    <form onSubmit={handleSubmit} className="space-y-6 text-[#0f172a] flex flex-col items-center">
+      <div className="w-full">
         <label htmlFor="question" className="block text-sm font-medium text-slate-700 mb-2">
           Forecasting Question
         </label>
@@ -53,7 +53,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="w-full grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="type" className="block text-sm font-medium text-slate-700 mb-2">
             Question Type
@@ -91,7 +91,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         </div>
       </div>
 
-      <div>
+      <div className="w-full">
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
@@ -202,7 +202,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
       <button
         type="submit"
         disabled={isSubmitting || !questionText.trim()}
-        className="w-full bg-[#2d7dd2] text-white py-3 px-6 rounded-lg font-semibold hover:bg-[#2568ad] disabled:bg-slate-400 disabled:text-white/80 disabled:cursor-not-allowed transition-colors shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+        className="w-full sm:w-auto self-center px-6 py-3 rounded-lg border-4 border-[#2d3748] bg-[#2d7dd2] text-[#f7f5f0] font-semibold tracking-[0.08em] shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {isSubmitting ? "Creating Forecast..." : "Start Forecasting"}
       </button>

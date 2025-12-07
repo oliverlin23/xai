@@ -49,17 +49,8 @@ export default function SuperforecastPage() {
       className="min-h-screen bg-cover bg-center bg-fixed"
       style={{ backgroundImage: 'url("/groklogo.png")' }}
     >
-      <div className="min-h-screen bg-slate-600/35 overflow-y-auto">
-        <div className="max-w-4xl mx-auto py-12 px-4 pt-24 text-slate-900">
-          <div className="text-center mb-10 drop-shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
-            <h1 className="text-4xl font-bold mb-3 text-[#0b1220]">
-              Grok-Powered Superforecasting
-            </h1>
-            <p className="text-lg text-slate-900">
-              23 collaborative Grok agents analyze your question to produce calibrated predictions
-            </p>
-          </div>
-
+      <div className="min-h-screen bg-slate-600/35 overflow-y-auto flex items-center justify-center px-4 py-24">
+        <div className="w-full max-w-4xl text-slate-900">
           <div
             className="bg-white text-[#0f172a] rounded-xl border-4 border-[#2d3748] shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-8"
             style={{
@@ -70,6 +61,14 @@ export default function SuperforecastPage() {
               `,
             }}
           >
+            <div className="text-center mb-6">
+              <h1 className="text-3xl font-bold mb-2 text-[#0b1220]">
+                Grok-Powered Superforecasting
+              </h1>
+              <p className="text-base text-slate-800">
+                23 collaborative Grok agents analyze your question to produce calibrated predictions
+              </p>
+            </div>
             <QuestionInput onSubmit={handleSubmit} isSubmitting={isSubmitting} />
           </div>
         </div>
