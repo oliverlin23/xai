@@ -298,6 +298,307 @@ async def get_forecast(forecast_id: str):
     return response
 
 
+class RunSessionRequest(BaseModel):
+    """Request model for running a session"""
+    question_text: str
+    question_type: str = "binary"  # binary, numeric, categorical
+    agent_counts: Optional[AgentCounts] = None  # Optional agent counts for superforecasters
+    resolution_criteria: str = "Standard YES/NO resolution based on outcome occurrence."
+    resolution_date: str = "Not specified"
+    trading_interval_seconds: int = 10  # Interval between trading rounds
+
+
+class RunSessionResponse(BaseModel):
+    """Response model for run session endpoint"""
+    session_id: str
+    question_text: str
+    status: str
+    message: str
+    created_at: datetime
+
+
+async def run_trading_simulation_background(
+    session_id: str,
+    question_text: str,
+    resolution_criteria: str,
+    resolution_date: str,
+    agent_counts: Optional[Dict[str, int]],
+    interval_seconds: int,
+):
+    """
+    Background task that:
+    1. Runs superforecasters to seed fundamental trader system_prompts
+    2. Stores their predictions in trader_state_live
+    3. Places initial market making orders
+    4. Starts continuous trading simulation with 18 agents
+    """
+    from app.db.repositories import ForecasterResponseRepository, TraderRepository
+    from app.market import SupabaseMarketMaker
+    from app.traders.simulation import TradingSimulation, register_simulation, unregister_simulation
+    
+    logger.info(f"[BACKGROUND] Starting trading simulation for session {session_id}")
+    
+    try:
+        # Step 1: Run all 5 superforecasters to seed fundamental trader knowledge
+        logger.info("[BACKGROUND] Running superforecasters to seed fundamental traders...")
+        await run_all_forecasters(session_id, question_text, agent_counts)
+        logger.info("[BACKGROUND] Superforecasters completed")
+        
+        # Step 2: Store forecaster responses as system_prompt in trader_state_live
+        response_repo = ForecasterResponseRepository()
+        trader_repo = TraderRepository()
+        market_maker = SupabaseMarketMaker()
+        
+        forecaster_responses = response_repo.get_session_responses(session_id)
+        logger.info(f"[BACKGROUND] Storing {len(forecaster_responses)} forecaster responses in trader_state_live")
+        
+        for response in forecaster_responses:
+            forecaster_class = response.get("forecaster_class")
+            prediction_result = response.get("prediction_result", {})
+            
+            if forecaster_class and prediction_result:
+                # Build system_prompt from prediction result
+                system_prompt_parts = []
+                
+                if prediction_result.get("prediction"):
+                    system_prompt_parts.append(f"Prediction: {prediction_result['prediction']}")
+                
+                prediction_probability = prediction_result.get("prediction_probability")
+                if prediction_probability is not None:
+                    system_prompt_parts.append(f"Probability: {prediction_probability:.1%}")
+                
+                if prediction_result.get("confidence") is not None:
+                    conf = prediction_result['confidence']
+                    system_prompt_parts.append(f"Confidence: {conf:.1%}")
+                
+                if prediction_result.get("reasoning"):
+                    system_prompt_parts.append(f"\nReasoning:\n{prediction_result['reasoning']}")
+                
+                if prediction_result.get("key_factors"):
+                    factors = prediction_result['key_factors']
+                    if isinstance(factors, list):
+                        factors_str = "\n".join(f"- {f}" for f in factors)
+                        system_prompt_parts.append(f"\nKey Factors:\n{factors_str}")
+                
+                system_prompt = "\n".join(system_prompt_parts)
+                
+                # Create or update trader_state_live record
+                existing_trader = trader_repo.get_trader(session_id, forecaster_class)
+                if existing_trader:
+                    trader_repo.update(existing_trader["id"], {"system_prompt": system_prompt})
+                else:
+                    trader_repo.create({
+                        "session_id": session_id,
+                        "trader_type": "fundamental",
+                        "name": forecaster_class,
+                        "system_prompt": system_prompt
+                    })
+                
+                # Place initial market making orders
+                if prediction_probability is not None:
+                    prediction_cents = max(2, min(98, int(round(prediction_probability * 100))))
+                    market_maker.place_market_making_orders(
+                        session_id=session_id,
+                        trader_name=forecaster_class,
+                        prediction=prediction_cents,
+                        spread=4,
+                        quantity=100
+                    )
+        
+        # Step 3: Create and start the trading simulation
+        logger.info("[BACKGROUND] Starting continuous trading simulation with 18 agents")
+        simulation = TradingSimulation(
+            session_id=session_id,
+            question_text=question_text,
+            resolution_criteria=resolution_criteria,
+            resolution_date=resolution_date,
+        )
+        
+        # Register simulation in global registry
+        register_simulation(simulation)
+        
+        # Initialize agents and start continuous trading
+        await simulation.initialize_agents()
+        await simulation.run_continuous(interval_seconds=interval_seconds)
+        
+    except Exception as e:
+        logger.error(f"[BACKGROUND] Trading simulation failed for session {session_id}: {e}", exc_info=True)
+    finally:
+        # Clean up
+        unregister_simulation(session_id)
+        logger.info(f"[BACKGROUND] Trading simulation ended for session {session_id}")
+
+
+@app.post("/api/sessions/run", response_model=RunSessionResponse)
+async def run_session(request: RunSessionRequest, background_tasks: BackgroundTasks):
+    """
+    Create a new session and start trading simulation in background.
+    
+    This endpoint returns immediately after creating the session.
+    The background task:
+    1. Runs 5 superforecasters to seed fundamental trader knowledge
+    2. Starts continuous trading simulation with 18 agents
+    
+    Frontend can see trades in real-time via Supabase realtime subscriptions.
+    """
+    logger.info("=" * 60)
+    logger.info("POST /api/sessions/run - Starting trading simulation")
+    logger.info(f"Question: {request.question_text[:100]}...")
+    logger.info(f"Question type: {request.question_type}")
+    logger.info(f"Trading interval: {request.trading_interval_seconds}s")
+    
+    # Create session in database
+    session_repo = SessionRepository()
+    session = session_repo.create_session(
+        question_text=request.question_text,
+        question_type=request.question_type
+    )
+    
+    session_id = session["id"]
+    logger.info(f"Session created: {session_id}")
+    
+    # Extract agent counts if provided
+    agent_counts = None
+    if request.agent_counts:
+        agent_counts = {}
+        if request.agent_counts.phase_1_discovery is not None:
+            agent_counts["phase_1_discovery"] = request.agent_counts.phase_1_discovery
+        if request.agent_counts.phase_2_validation is not None:
+            agent_counts["phase_2_validation"] = request.agent_counts.phase_2_validation
+        if request.agent_counts.phase_3_historical is not None:
+            agent_counts["phase_3_historical"] = request.agent_counts.phase_3_historical
+        if request.agent_counts.phase_3_current is not None:
+            agent_counts["phase_3_current"] = request.agent_counts.phase_3_current
+        if request.agent_counts.phase_3_research is not None and "phase_3_historical" not in agent_counts:
+            agent_counts["phase_3_research"] = request.agent_counts.phase_3_research
+        if request.agent_counts.phase_4_synthesis is not None:
+            agent_counts["phase_4_synthesis"] = request.agent_counts.phase_4_synthesis
+    
+    # Start trading simulation in background
+    background_tasks.add_task(
+        run_trading_simulation_background,
+        session_id,
+        request.question_text,
+        request.resolution_criteria,
+        request.resolution_date,
+        agent_counts,
+        request.trading_interval_seconds,
+    )
+    
+    logger.info(f"Trading simulation started in background for session {session_id}")
+    logger.info("=" * 60)
+    
+    # Parse created_at
+    created_at_str = session["created_at"]
+    if isinstance(created_at_str, str):
+        created_at_str = created_at_str.replace("Z", "+00:00")
+        created_at = datetime.fromisoformat(created_at_str)
+    else:
+        created_at = datetime.now()
+    
+    return RunSessionResponse(
+        session_id=session_id,
+        question_text=request.question_text,
+        status="running",
+        message="Trading simulation started. 5 superforecasters will run first, then 18 agents will trade continuously.",
+        created_at=created_at,
+    )
+
+
+class SimulationStatusResponse(BaseModel):
+    """Response model for simulation status"""
+    session_id: str
+    running: bool
+    round_number: int
+    agent_count: int
+    agents: List[str]
+    message: str
+
+
+@app.get("/api/sessions/{session_id}/status", response_model=SimulationStatusResponse)
+async def get_simulation_status(session_id: str):
+    """
+    Get the status of a trading simulation.
+    """
+    from app.traders.simulation import get_simulation
+    
+    simulation = get_simulation(session_id)
+    
+    if simulation is None:
+        # Check if session exists
+        session_repo = SessionRepository()
+        session = session_repo.find_by_id(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return SimulationStatusResponse(
+            session_id=session_id,
+            running=False,
+            round_number=0,
+            agent_count=0,
+            agents=[],
+            message="Simulation not running (may have completed or not started)",
+        )
+    
+    status = simulation.get_status()
+    return SimulationStatusResponse(
+        session_id=session_id,
+        running=status["running"],
+        round_number=status["round_number"],
+        agent_count=status["agent_count"],
+        agents=status["agents"],
+        message="Simulation is running" if status["running"] else "Simulation stopped",
+    )
+
+
+class StopSimulationResponse(BaseModel):
+    """Response model for stop simulation endpoint"""
+    session_id: str
+    stopped: bool
+    message: str
+
+
+@app.post("/api/sessions/{session_id}/stop", response_model=StopSimulationResponse)
+async def stop_simulation(session_id: str):
+    """
+    Stop a running trading simulation.
+    """
+    from app.traders.simulation import get_simulation
+    
+    simulation = get_simulation(session_id)
+    
+    if simulation is None:
+        # Check if session exists
+        session_repo = SessionRepository()
+        session = session_repo.find_by_id(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return StopSimulationResponse(
+            session_id=session_id,
+            stopped=False,
+            message="Simulation not running (may have already stopped)",
+        )
+    
+    if not simulation.is_running:
+        return StopSimulationResponse(
+            session_id=session_id,
+            stopped=False,
+            message="Simulation already stopped",
+        )
+    
+    simulation.stop()
+    logger.info(f"Simulation stopped for session {session_id}")
+    
+    return StopSimulationResponse(
+        session_id=session_id,
+        stopped=True,
+        message="Simulation stop requested. It will stop after the current round completes.",
+    )
+
+
 @app.get("/api/forecasts")
 async def list_forecasts(limit: int = 10, offset: int = 0, question_text: Optional[str] = None):
     """

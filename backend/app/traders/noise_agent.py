@@ -5,11 +5,14 @@ Analyzes X/Twitter sentiment to generate probability predictions for prediction 
 Supports two modes:
 1. Tool-based: Grok calls x_search tool directly (original behavior)
 2. Semantic filter: Pre-filters tweets for relevance before prediction (recommended)
+
+Notes are persisted in trader_state_live.system_prompt for continuity across rounds.
 """
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from app.agents.base import BaseAgent
 from app.core.config import get_settings
+from app.db.repositories import TraderRepository
 from datetime import datetime, timedelta, UTC
 import json
 import logging
@@ -66,9 +69,6 @@ class NoiseTraderOutput(BaseModel):
     )
     
     # Analysis
-    analysis: str = Field(
-        description="Aggregated analysis of competing factors, bias adjustments, and key considerations"
-    )
     initial_probability: int = Field(
         ge=0, le=100,
         description="Initial/tentative probability before reflection"
@@ -78,10 +78,6 @@ class NoiseTraderOutput(BaseModel):
     )
     
     # Metadata
-    signal: str = Field(
-        default="uncertain",
-        description="Overall signal from X community: yes, no, uncertain, or mixed"
-    )
     tweets_analyzed: int = Field(
         default=0,
         description="Number of tweets analyzed"
@@ -90,20 +86,20 @@ class NoiseTraderOutput(BaseModel):
         default=50,
         description="Market baseline probability. Do not rely on this as an anchor."
     )
-    confidence: float = Field(
-        ge=0.0, le=1.0,
-        description="Confidence in this prediction (based on evidence quality)"
-    )
     
     # Memory for next round
     notes_for_next_round: str = Field(
         default="",
         description=(
-            "Notes to yourself for the next trading round. Include: "
+            "Notes to yourself for the next trading round. Be extremely detailed and comprehensive. "
+            "There is no length limit - write as much as you need. "
+            "Include: "
             "1) Key insights or patterns you noticed, "
             "2) What you were uncertain about that might clarify, "
             "3) Specific things to watch for in new information, "
-            "4) Your current thesis and what would change your mind. "
+            "4) Your current thesis and what would change your mind, "
+            "5) How confident are you in your prediction and why, "
+            "6) Any important context or reasoning you want to preserve. "
             "This will be provided back to you in the next round."
         )
     )
@@ -227,11 +223,14 @@ class NoiseTrader(BaseAgent):
     Supports two modes:
     - Tool mode (enable_tools=True, use_semantic_filter=False): Grok calls x_search directly
     - Semantic filter mode (use_semantic_filter=True): Pre-filters tweets for relevance (recommended)
+    
+    Notes are persisted in trader_state_live.system_prompt for continuity across rounds.
     """
 
     def __init__(
         self,
         sphere: str,
+        session_id: Optional[str] = None,
         agent_name: str = None,
         phase: str = "prediction",
         max_retries: int = 3,
@@ -246,8 +245,11 @@ class NoiseTrader(BaseAgent):
             raise ValueError(f"Invalid sphere '{sphere}'. Valid options: {valid}")
         
         self.sphere = sphere
+        self.session_id = session_id
+        self.trader_name = sphere  # For noise traders, trader_name = sphere key
         self._sphere_data = get_sphere(sphere)
         self._use_semantic_filter = use_semantic_filter
+        self._trader_repo = TraderRepository() if session_id else None
         
         # Auto-generate agent name if not provided
         if agent_name is None:
@@ -291,6 +293,53 @@ class NoiseTrader(BaseAgent):
     def set_previous_notes(self, notes: str) -> None:
         """Set notes from a previous round to be included in next prediction"""
         self._previous_notes = notes
+    
+    def load_previous_notes(self) -> str:
+        """
+        Load previous notes from trader_state_live.system_prompt.
+        Returns empty string if no notes found or session_id not set.
+        """
+        if not self.session_id or not self._trader_repo:
+            return self._previous_notes
+        
+        try:
+            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
+            if trader and trader.get("system_prompt"):
+                notes = trader["system_prompt"]
+                self._previous_notes = notes
+                logger.info(f"NoiseTrader ({self.sphere}) loaded notes from DB ({len(notes)} chars)")
+                return notes
+        except Exception as e:
+            logger.warning(f"Failed to load notes from DB: {e}")
+        
+        return self._previous_notes
+    
+    def save_notes(self, notes: str) -> bool:
+        """
+        Save notes to trader_state_live.system_prompt.
+        Returns True if successful, False otherwise.
+        """
+        if not self.session_id or not self._trader_repo:
+            return False
+        
+        try:
+            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
+            if trader:
+                self._trader_repo.update(trader["id"], {"system_prompt": notes})
+                logger.info(f"NoiseTrader ({self.sphere}) saved notes to DB ({len(notes)} chars)")
+            else:
+                # Create new trader record if it doesn't exist
+                self._trader_repo.create({
+                    "session_id": self.session_id,
+                    "trader_type": "noise",
+                    "name": self.trader_name,
+                    "system_prompt": notes
+                })
+                logger.info(f"NoiseTrader ({self.sphere}) created trader record with notes")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to save notes to DB: {e}")
+            return False
 
     async def build_user_message(
         self, 
@@ -520,6 +569,12 @@ Please provide your forecast following the structured format:
     ) -> Dict[str, Any]:
         """Execute the noise trader to generate a prediction"""
         
+        # Load previous notes from DB if session_id is set
+        if self.session_id:
+            db_notes = self.load_previous_notes()
+            if db_notes and "previous_notes" not in input_data:
+                input_data["previous_notes"] = db_notes
+        
         # Use semantic filter mode if enabled
         if self._use_semantic_filter:
             return await self._execute_with_semantic_filter(input_data, progress_callback)
@@ -586,13 +641,10 @@ Please provide your forecast following the structured format:
                         "key_facts": [],
                         "reasons_no": [],
                         "reasons_yes": [],
-                        "analysis": content[:500] if content else "Unable to generate analysis",
                         "initial_probability": baseline,
                         "reflection": "Response could not be parsed",
-                        "signal": "uncertain",
                         "tweets_analyzed": filtered_tweets.relevant_tweet_count,
                         "baseline_probability": baseline,
-                        "confidence": 0.3,
                         "notes_for_next_round": "",
                     }
                 
@@ -601,14 +653,16 @@ Please provide your forecast following the structured format:
                     raw_output["tweets_analyzed"] = filtered_tweets.relevant_tweet_count
                 if "baseline_probability" not in raw_output:
                     raw_output["baseline_probability"] = getattr(self, '_baseline_probability', 50)
-                if "signal" not in raw_output:
-                    raw_output["signal"] = "uncertain"
                 if "notes_for_next_round" not in raw_output:
                     raw_output["notes_for_next_round"] = ""
                 
                 validated_output = self.output_schema(**raw_output)
                 self.output_data = validated_output.model_dump()
                 self.status = "completed"
+                
+                # Save notes to DB for next round
+                if self.session_id and self.output_data.get("notes_for_next_round"):
+                    self.save_notes(self.output_data["notes_for_next_round"])
                 
                 if progress_callback:
                     await progress_callback(self.agent_name, "completed", self.output_data)
@@ -718,13 +772,10 @@ Please provide your forecast following the structured format:
                         "key_facts": [],
                         "reasons_no": [],
                         "reasons_yes": [],
-                        "analysis": content[:500] if content else "Unable to generate analysis",
                         "initial_probability": 50,
                         "reflection": "Response could not be parsed",
-                        "signal": "uncertain",
                         "tweets_analyzed": 0,
                         "baseline_probability": 50,
-                        "confidence": 0.3,
                         "notes_for_next_round": "",
                     }
                 
@@ -735,6 +786,10 @@ Please provide your forecast following the structured format:
                 validated_output = self.output_schema(**raw_output)
                 self.output_data = validated_output.model_dump()
                 self.status = "completed"
+                
+                # Save notes to DB for next round
+                if self.session_id and self.output_data.get("notes_for_next_round"):
+                    self.save_notes(self.output_data["notes_for_next_round"])
                 
                 if progress_callback:
                     await progress_callback(self.agent_name, "completed", self.output_data)

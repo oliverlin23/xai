@@ -6,12 +6,15 @@ to generate probability predictions for prediction markets.
 
 Unlike NoiseTrader which searches keywords across spheres, UserAgent
 tracks a single account's posts as context for forecasting.
+
+Notes are persisted in trader_state_live.system_prompt for continuity across rounds.
 """
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from app.agents.base import BaseAgent
 from app.core.config import get_settings
 from app.services.grok import GrokService, GROK_MODEL_FAST
+from app.db.repositories import TraderRepository
 from datetime import datetime, timedelta, UTC
 import json
 import logging
@@ -215,11 +218,14 @@ class UserAgent(BaseAgent):
     
     The tracked account is determined by the agent's name field, which maps
     to an X username via USER_ACCOUNT_MAPPINGS.
+    
+    Notes are persisted in trader_state_live.system_prompt for continuity across rounds.
     """
     
     def __init__(
         self,
         name: str,
+        session_id: str | None = None,
         target_username: str | None = None,
         agent_name: str | None = None,
         phase: str = "prediction",
@@ -234,6 +240,7 @@ class UserAgent(BaseAgent):
         
         Args:
             name: User agent name (e.g., "oliver", "owen"). Used to look up X username.
+            session_id: Optional session ID for DB persistence of notes.
             target_username: Optional explicit X username override. If not provided,
                            uses USER_ACCOUNT_MAPPINGS[name].
             agent_name: Optional custom agent name for logging. Defaults to "user_agent_{name}".
@@ -245,7 +252,11 @@ class UserAgent(BaseAgent):
             lookback_days: How many days back to search for posts.
         """
         self.user_name = name.lower()
+        self.session_id = session_id
+        self.trader_name = name.lower()  # For user agents, trader_name = user name
         self._last_seen_post_id: str | None = None
+        self._trader_repo = TraderRepository() if session_id else None
+        self._previous_notes: str = ""
         
         # Determine target X username
         if target_username:
@@ -283,6 +294,53 @@ class UserAgent(BaseAgent):
             max_posts_to_return=max_posts_to_return,
             lookback_days=lookback_days,
         )
+    
+    def load_previous_notes(self) -> str:
+        """
+        Load previous notes from trader_state_live.system_prompt.
+        Returns empty string if no notes found or session_id not set.
+        """
+        if not self.session_id or not self._trader_repo:
+            return self._previous_notes
+        
+        try:
+            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
+            if trader and trader.get("system_prompt"):
+                notes = trader["system_prompt"]
+                self._previous_notes = notes
+                logger.info(f"UserAgent ({self.user_name}) loaded notes from DB ({len(notes)} chars)")
+                return notes
+        except Exception as e:
+            logger.warning(f"Failed to load notes from DB: {e}")
+        
+        return self._previous_notes
+    
+    def save_notes(self, notes: str) -> bool:
+        """
+        Save notes to trader_state_live.system_prompt.
+        Returns True if successful, False otherwise.
+        """
+        if not self.session_id or not self._trader_repo:
+            return False
+        
+        try:
+            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
+            if trader:
+                self._trader_repo.update(trader["id"], {"system_prompt": notes})
+                logger.info(f"UserAgent ({self.user_name}) saved notes to DB ({len(notes)} chars)")
+            else:
+                # Create new trader record if it doesn't exist
+                self._trader_repo.create({
+                    "session_id": self.session_id,
+                    "trader_type": "user",
+                    "name": self.trader_name,
+                    "system_prompt": notes
+                })
+                logger.info(f"UserAgent ({self.user_name}) created trader record with notes")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to save notes to DB: {e}")
+            return False
     
     async def build_user_message(
         self,
@@ -419,6 +477,12 @@ INSTRUCTIONS:
         if progress_callback:
             await progress_callback(self.agent_name, "started")
         
+        # Load previous notes from DB if session_id is set
+        if self.session_id:
+            db_notes = self.load_previous_notes()
+            if db_notes and "previous_notes" not in input_data:
+                input_data["previous_notes"] = db_notes
+        
         market_topic = input_data.get("market_topic", "")
         
         for attempt in range(self.max_retries):
@@ -505,6 +569,10 @@ INSTRUCTIONS:
                 validated_output = self.output_schema(**raw_output)
                 self.output_data = validated_output.model_dump()
                 self.status = "completed"
+                
+                # Save notes to DB for next round
+                if self.session_id and self.output_data.get("notes_for_next_round"):
+                    self.save_notes(self.output_data["notes_for_next_round"])
                 
                 if progress_callback:
                     await progress_callback(self.agent_name, "completed", self.output_data)

@@ -4,7 +4,7 @@ Fundamental Trader - Prediction market agent that trades on prior information on
 Unlike NoiseTrader, FundamentalTrader does NOT use X/Twitter data.
 Instead, it trades purely on:
 1. Market data (orderbook, recent trades)
-2. Notes from previous rounds
+2. Notes from previous rounds (persisted in trader_state_live.system_prompt)
 3. Its own analytical reasoning
 
 This simulates a "fundamentals-only" trader who doesn't follow social sentiment.
@@ -12,6 +12,7 @@ This simulates a "fundamentals-only" trader who doesn't follow social sentiment.
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from app.agents.base import BaseAgent
+from app.db.repositories import TraderRepository
 from datetime import datetime, UTC
 import json
 import logging
@@ -85,9 +86,6 @@ class FundamentalTraderOutput(BaseModel):
     )
     
     # Analysis
-    analysis: str = Field(
-        description="Aggregated analysis of competing factors, market dynamics, and key considerations"
-    )
     initial_probability: int = Field(
         ge=0, le=100,
         description="Initial/tentative probability before reflection"
@@ -97,30 +95,24 @@ class FundamentalTraderOutput(BaseModel):
     )
     
     # Metadata
-    signal: str = Field(
-        default="uncertain",
-        description="Overall signal: yes, no, uncertain, or mixed"
-    )
     baseline_probability: int = Field(
         default=50,
         description="Market baseline probability. Used as reference, not anchor."
-    )
-    confidence: float = Field(
-        ge=0.0, le=1.0,
-        description="Confidence in this prediction (based on evidence quality)"
     )
     
     # Memory for next round
     notes_for_next_round: str = Field(
         default="",
         description=(
-            "Notes to yourself for the next trading round. Be extremely detailed."
+            "Notes to yourself for the next trading round. Be extremely detailed and comprehensive. "
+            "There is no length limit - write as much as you need. "
             "Include: "
             "1) Key insights or patterns you noticed, "
             "2) What you were uncertain about that might clarify, "
             "3) Specific things to watch for in new market data, "
-            "4) Your current thesis and what would change your mind. "
-            "5) How confident are you in your prediction? You should try to be confident."
+            "4) Your current thesis and what would change your mind, "
+            "5) How confident are you in your prediction and why, "
+            "6) Any important context or reasoning you want to preserve. "
             "This will be provided back to you in the next round."
         )
     )
@@ -190,13 +182,14 @@ class FundamentalTrader(BaseAgent):
     Unlike NoiseTrader, this agent does NOT use X/Twitter data.
     It relies purely on:
     - Market data (orderbook, recent trades)
-    - Notes from previous rounds
+    - Notes from previous rounds (persisted in trader_state_live.system_prompt)
     - Its own analytical reasoning
     """
 
     def __init__(
         self,
         trader_type: str,
+        session_id: Optional[str] = None,
         agent_name: str = None,
         phase: str = "prediction",
         max_retries: int = 3,
@@ -208,7 +201,10 @@ class FundamentalTrader(BaseAgent):
             raise ValueError(f"Invalid trader_type '{trader_type}'. Valid options: {valid}")
         
         self.trader_type = trader_type
+        self.session_id = session_id
+        self.trader_name = trader_type  # For fundamental traders, trader_name = trader_type
         self._trader_info = FUNDAMENTAL_TRADER_TYPES[trader_type]
+        self._trader_repo = TraderRepository() if session_id else None
         
         # Auto-generate agent name if not provided
         if agent_name is None:
@@ -236,6 +232,53 @@ class FundamentalTrader(BaseAgent):
     def set_previous_notes(self, notes: str) -> None:
         """Set notes from a previous round to be included in next prediction"""
         self._previous_notes = notes
+    
+    def load_previous_notes(self) -> str:
+        """
+        Load previous notes from trader_state_live.system_prompt.
+        Returns empty string if no notes found or session_id not set.
+        """
+        if not self.session_id or not self._trader_repo:
+            return self._previous_notes
+        
+        try:
+            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
+            if trader and trader.get("system_prompt"):
+                notes = trader["system_prompt"]
+                self._previous_notes = notes
+                logger.info(f"FundamentalTrader ({self.trader_type}) loaded notes from DB ({len(notes)} chars)")
+                return notes
+        except Exception as e:
+            logger.warning(f"Failed to load notes from DB: {e}")
+        
+        return self._previous_notes
+    
+    def save_notes(self, notes: str) -> bool:
+        """
+        Save notes to trader_state_live.system_prompt.
+        Returns True if successful, False otherwise.
+        """
+        if not self.session_id or not self._trader_repo:
+            return False
+        
+        try:
+            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
+            if trader:
+                self._trader_repo.update(trader["id"], {"system_prompt": notes})
+                logger.info(f"FundamentalTrader ({self.trader_type}) saved notes to DB ({len(notes)} chars)")
+            else:
+                # Create new trader record if it doesn't exist
+                self._trader_repo.create({
+                    "session_id": self.session_id,
+                    "trader_type": "fundamental",
+                    "name": self.trader_name,
+                    "system_prompt": notes
+                })
+                logger.info(f"FundamentalTrader ({self.trader_type}) created trader record with notes")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to save notes to DB: {e}")
+            return False
 
     async def build_user_message(self, input_data: Dict[str, Any]) -> str:
         """
@@ -465,6 +508,12 @@ Please provide your forecast following the structured format:
         if progress_callback:
             await progress_callback(self.agent_name, "started")
 
+        # Load previous notes from DB if session_id is set
+        if self.session_id:
+            db_notes = self.load_previous_notes()
+            if db_notes and "previous_notes" not in input_data:
+                input_data["previous_notes"] = db_notes
+
         for attempt in range(self.max_retries):
             try:
                 # Build user message (no external API calls needed)
@@ -496,26 +545,25 @@ Please provide your forecast following the structured format:
                         "key_facts": [],
                         "reasons_no": [],
                         "reasons_yes": [],
-                        "analysis": content[:500] if content else "Unable to generate analysis",
                         "initial_probability": baseline,
                         "reflection": "Response could not be parsed",
-                        "signal": "uncertain",
                         "baseline_probability": baseline,
-                        "confidence": 0.3,
                         "notes_for_next_round": "",
                     }
                 
                 # Ensure metadata fields are populated
                 if "baseline_probability" not in raw_output:
                     raw_output["baseline_probability"] = getattr(self, '_baseline_probability', 50)
-                if "signal" not in raw_output:
-                    raw_output["signal"] = "uncertain"
                 if "notes_for_next_round" not in raw_output:
                     raw_output["notes_for_next_round"] = ""
                 
                 validated_output = self.output_schema(**raw_output)
                 self.output_data = validated_output.model_dump()
                 self.status = "completed"
+                
+                # Save notes to DB for next round
+                if self.session_id and self.output_data.get("notes_for_next_round"):
+                    self.save_notes(self.output_data["notes_for_next_round"])
                 
                 if progress_callback:
                     await progress_callback(self.agent_name, "completed", self.output_data)
