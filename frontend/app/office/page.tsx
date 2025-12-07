@@ -45,6 +45,8 @@ const Cubicle = ({
   name,
   role,
   status,
+  community,
+  lastTrade,
   hasPlant = false,
   hasTrash = false,
 }: {
@@ -52,10 +54,21 @@ const Cubicle = ({
   name: string
   role: string
   status: keyof typeof statusStyles
+  community?: string
+  lastTrade?: {
+    side: "buy" | "sell"
+    symbol: string
+    quantity: number
+    price: number
+  }
   hasPlant?: boolean
   hasTrash?: boolean
 }) => {
   const statusMeta = statusStyles[status]
+
+  const tradeLine = lastTrade
+    ? `${lastTrade.side.toUpperCase()} ${lastTrade.quantity} ${lastTrade.symbol} @ $${lastTrade.price}`
+    : "No trades yet"
 
   return (
     <div className="relative w-[180px] h-[180px] group">
@@ -65,6 +78,18 @@ const Cubicle = ({
       </div>
 
       <PartitionFrame />
+
+      {/* Hover card */}
+      <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-40 px-3 py-2 rounded-md bg-slate-900/90 border border-white/10 shadow-lg text-xs text-slate-100 opacity-0 transition-opacity duration-150 group-hover:opacity-100 whitespace-nowrap">
+        <div className="font-semibold">{name}</div>
+        <div className="text-[11px] text-slate-300">Role: {role}</div>
+        <div className="text-[11px] text-slate-300">
+          Community: {community || "TBD"}
+        </div>
+        <div className="text-[11px] text-slate-200 mt-1">
+          Last trade: {tradeLine}
+        </div>
+      </div>
 
       {/* Worker */}
       <img
@@ -89,9 +114,9 @@ const Cubicle = ({
         />
       )}
 
-      {/* Status */}
+      {/* Status dot */}
       <div className="absolute top-2 left-2 z-30 flex items-center gap-2">
-        
+        <div className={`h-3 w-3 rounded-full ${statusMeta.className}`} title={statusMeta.label} />
       </div>
 
     </div>
@@ -108,6 +133,8 @@ const OfficeScene = () => {
       status: "idle" as const,
       cubicleIndex: i,
       mood: "neutral" as const,
+      community: "TBD",
+      lastTrade: undefined,
     }
   })
 
@@ -125,6 +152,8 @@ const OfficeScene = () => {
                   name={agent.name}
                   role={roles[i % roles.length]}
                   status={agent.status}
+                  community={agent.community}
+                  lastTrade={agent.lastTrade}
                   hasPlant={false}
                   hasTrash={i % 4 === 1}
                 />
@@ -142,7 +171,9 @@ const OfficeScene = () => {
                     sprite={workerSprites[idx % workerSprites.length]}
                     name={agent.name}
                     role={roles[idx % roles.length]}
-                    status={agent.status}
+                  status={agent.status}
+                  community={agent.community}
+                  lastTrade={agent.lastTrade}
                     hasPlant={false}
                     hasTrash={idx % 4 === 1}
                   />
