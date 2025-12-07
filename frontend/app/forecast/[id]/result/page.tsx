@@ -51,8 +51,8 @@ export default function ForecastResultPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="max-w-6xl mx-auto px-4 pt-24 pb-10">
+      <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Forecast Results
@@ -69,7 +69,7 @@ export default function ForecastResultPage() {
         </Link>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid lg:grid-cols-2 gap-6 mb-8 items-start">
         <ForecastCard
           prediction={forecast.prediction_result.prediction}
           prediction_probability={forecast.prediction_result.prediction_probability}
@@ -94,7 +94,9 @@ export default function ForecastResultPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Total Tokens Used</span>
-                <span className="font-semibold">{forecast.total_cost_tokens.toLocaleString()}</span>
+                <span className="font-semibold">
+                  {(forecast.total_cost_tokens ?? 0).toLocaleString()}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Completed At</span>
