@@ -7,12 +7,12 @@ from openai import RateLimitError, APIError, APIConnectionError, APITimeoutError
 from typing import AsyncIterator, Dict, Any, Optional, List
 from pydantic import BaseModel
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 import asyncio
 import random
-import logging
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class GrokService:
@@ -27,12 +27,16 @@ class GrokService:
     """
 
     def __init__(self):
+        logger.info("[GROK SERVICE] Initializing GrokService")
+        logger.info("[GROK SERVICE] Loading settings from app.core.config")
         settings = get_settings()
+        logger.info("[GROK SERVICE] Creating AsyncOpenAI client (base_url: https://api.x.ai/v1)")
         self.client = AsyncOpenAI(
             api_key=settings.grok_api_key,
             base_url="https://api.x.ai/v1"
         )
         self.model = "grok-4-1-fast-reasoning"  # Grok 4.1 Fast Reasoning - optimized for agentic workflows
+        logger.info(f"[GROK SERVICE] Model set to: {self.model}")
         
         # Rate limiting configuration (from settings or defaults)
         self.max_requests_per_minute = getattr(
@@ -235,18 +239,25 @@ class GrokService:
             }
 
         # Use semaphore to limit concurrent requests
+        logger.info(f"[GROK API] Acquiring semaphore (max concurrent: {self.max_concurrent_requests})")
         async with self.semaphore:
+            logger.info("[GROK API] Semaphore acquired")
             # Wait if approaching rate limits
+            logger.info("[GROK API] Checking rate limits")
             await self._wait_for_rate_limit()
             
             # Retry loop with exponential backoff for rate limits
             last_exception = None
             for attempt in range(self.rate_limit_retry_attempts):
+                logger.info(f"[GROK API] Attempt {attempt + 1}/{self.rate_limit_retry_attempts}")
                 try:
                     # Record request time
                     self.request_times.append(datetime.utcnow())
+                    logger.info(f"[GROK API] Making API call to {self.model}")
+                    logger.info(f"[GROK API] Request kwargs: model={kwargs.get('model')}, max_tokens={kwargs.get('max_tokens')}")
                     
                     response = await self.client.chat.completions.create(**kwargs)
+                    logger.info("[GROK API] API call successful")
                     
                     # Parse rate limit headers if available
                     if hasattr(response, 'headers'):

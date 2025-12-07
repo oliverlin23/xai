@@ -8,19 +8,30 @@ export default function HomePage() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSubmit = async (questionText: string, questionType: string) => {
+  const handleSubmit = async (
+    questionText: string,
+    questionType: string,
+    agentCounts?: { phase_1_discovery: number; phase_2_validation: number; phase_3_research: number; phase_4_synthesis: number }
+  ) => {
     setIsSubmitting(true)
 
     try {
+      const requestBody: any = {
+        question_text: questionText,
+        question_type: questionType,
+      }
+      
+      // Add agent_counts if provided
+      if (agentCounts) {
+        requestBody.agent_counts = agentCounts
+      }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/forecasts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          question_text: questionText,
-          question_type: questionType,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
