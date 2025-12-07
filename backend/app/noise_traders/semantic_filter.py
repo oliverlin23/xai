@@ -28,7 +28,7 @@ _x_search_path = Path(__file__).parent.parent.parent.parent
 if str(_x_search_path) not in sys.path:
     sys.path.insert(0, str(_x_search_path))
 
-from x_search.communities import COMMUNITIES, get_community_users
+from x_search.communities import SPHERES, get_sphere, get_sphere_names
 from x_search.tool import run_tool as x_search_run_tool, XSearchConfig
 
 
@@ -37,14 +37,15 @@ class RelevantTweet(BaseModel):
 
     author: str = Field(description="Tweet author username")
     text: str = Field(description="Tweet text content")
+    created_at: str = Field(description="Tweet timestamp (ISO format)")
     relevance_score: float = Field(
         ge=0.0, le=1.0, description="Relevance score from 0-1"
     )
     relevance_reason: str = Field(
         description="Brief explanation of why this tweet is relevant"
     )
-    sentiment: str = Field(
-        description="Sentiment toward the prediction outcome: bullish, bearish, neutral"
+    signal: str = Field(
+        description="Signal direction: yes (supports YES outcome), no (supports NO outcome), or uncertain"
     )
     likes: int = Field(default=0, description="Number of likes")
     retweets: int = Field(default=0, description="Number of retweets")
@@ -57,15 +58,7 @@ class SemanticFilterOutput(BaseModel):
         description="List of tweets relevant to the prediction question, ranked by relevance"
     )
     summary: str = Field(
-        description="Brief summary of what the relevant tweets indicate about the prediction"
-    )
-    overall_sentiment: str = Field(
-        description="Overall sentiment across relevant tweets: bullish, bearish, neutral, mixed"
-    )
-    confidence: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="Confidence in the filtering (based on tweet quality and relevance)",
+        description="Brief factual summary of what topics/perspectives the relevant tweets cover"
     )
     total_tweets_analyzed: int = Field(description="Total tweets that were analyzed")
     relevant_tweet_count: int = Field(
@@ -75,30 +68,57 @@ class SemanticFilterOutput(BaseModel):
 
 SEMANTIC_FILTER_PROMPT = """You are a semantic relevance filter for prediction market research.
 
-Your task is to analyze tweets and determine which ones are ACTUALLY relevant to answering a specific prediction market question.
+IMPORTANT: Today's date is {current_date}. Use this to interpret temporal references in tweets.
+- All tweets are within 7 days from the current date.
+
+Your task is to analyze tweets and determine which ones are ACTUALLY relevant to answering a specific prediction market question, filtered through a specific sphere of influence.
 
 PREDICTION QUESTION: {question}
 
+This question resolves YES if the stated outcome occurs, and NO if it does not.
+
+TARGET SPHERE OF INFLUENCE: {sphere_name}
+{sphere_description}
+
 FILTERING CRITERIA:
 1. **Direct Relevance**: Does the tweet discuss the topic of the prediction?
-2. **Informational Value**: Does it provide facts, opinions, or signals that could inform the prediction?
-3. **Source Authority**: Is the author someone whose opinion matters for this topic?
-4. **Recency Signal**: Does it reflect current sentiment or recent developments?
+2. **Sphere Alignment**: Does this tweet come from or resonate with the target sphere? Prioritize voices that would be influential within this sphere.
+3. **Informational Value**: Does it provide facts, opinions, or signals that could inform the prediction?
+4. **Source Authority**: Is the author someone whose opinion matters for this topic within this sphere?
+5. **Recency Signal**: Does it reflect current sentiment or recent developments?
+
+ENGAGEMENT WEIGHTING (factor this into relevance_score):
+- High-engagement tweets from authoritative accounts should receive HIGHER relevance scores
+- A tweet with 500+ likes from a verified expert is more signal-worthy than one with 5 likes
+- Use engagement as a multiplier: base_relevance * engagement_boost
+  - 0-50 likes: 1.0x (no boost)
+  - 50-200 likes: 1.1x boost
+  - 200-500 likes: 1.2x boost  
+  - 500+ likes: 1.3x boost
+- Retweets count as 2x likes for this calculation
 
 EXCLUDE tweets that are:
 - Off-topic or only tangentially related
+- Not aligned with the target sphere's discourse style or concerns
 - Pure spam, promotions, or engagement bait
-- Duplicate information already captured in other tweets
 - Too vague to provide actionable insight
 
 For each relevant tweet, provide:
-- relevance_score: 0.0-1.0 (1.0 = highly relevant and informative)
-- relevance_reason: Why this tweet matters for the prediction
-- sentiment: Whether this tweet is bullish (supports YES), bearish (supports NO), or neutral
+- author: The @username from the tweet
+- text: The tweet text (can be truncated)
+- created_at: The timestamp from the tweet (preserve the ISO format)
+- relevance_score: 0.0-1.0 (1.0 = highly relevant, sphere-aligned, and informative) - INCLUDE engagement weighting
+- relevance_reason: Why this tweet matters for the prediction AND why it's relevant to this sphere
+- signal: The direction this tweet points toward:
+  - "yes" = suggests the outcome WILL happen (increases probability)
+  - "no" = suggests the outcome will NOT happen (decreases probability)
+  - "uncertain" = provides context but no clear directional signal
+- likes: Number of likes
+- retweets: Number of retweets
 
 Return ONLY tweets with relevance_score >= 0.3. Rank them by relevance_score descending.
 
-Provide a summary of what the relevant tweets collectively indicate about the prediction question."""
+Provide a brief factual summary of what topics and perspectives the relevant tweets cover. Do NOT make predictions or choose an overall signal - just summarize the content."""
 
 
 class SearchQueryOutput(BaseModel):
@@ -120,45 +140,41 @@ class SearchQueryOutput(BaseModel):
 
 KEYWORD_EXTRACTION_PROMPT = """You are a search query optimizer for the X (Twitter) API.
 
-Your task is to convert a prediction market question into a SIMPLE search query that will find relevant tweets.
+Your task is to convert a prediction market question into a BROAD boolean search query.
 
-CRITICAL RULES:
-1. NEVER use AND - it's way too restrictive and returns almost no results
-2. NEVER use multiple keyword groups - X API treats spaces as AND
-3. ONLY use OR to combine 3-6 keywords into a single flat list
-4. Include common abbreviations and slang (BTC for Bitcoin, ETH for Ethereum)
-5. Focus on the CORE TOPIC only - ignore prediction framing words
+CRITICAL: In X API search, spaces between groups act as AND. So "(bitcoin) (100k)" means bitcoin AND 100k - very restrictive!
 
-CORRECT FORMAT:
-keyword1 OR keyword2 OR keyword3 OR keyword4
+RULES FOR BROAD SEARCH:
+1. Use a SINGLE group with OR to maximize results: bitcoin OR BTC OR crypto
+2. Focus on just the PRIMARY ENTITY/TOPIC - cast a wide net!
+3. Include common abbreviations and slang (BTC, ETH, GPT, etc.)
+4. DO NOT add restrictive terms like prices, dates, or outcomes
+5. We filter for relevance AFTER fetching - your job is to find tweets, not filter them
 
 EXAMPLES:
-- "Will Bitcoin reach $100k by end of 2025?" → "bitcoin OR BTC OR crypto"
-- "Will Trump win the 2024 election?" → "trump OR maga OR election"
-- "Will OpenAI release GPT-5 in 2025?" → "openai OR gpt5 OR chatgpt OR altman"
+- "Will Bitcoin reach $100k by end of 2025?" → "bitcoin OR BTC OR btc"
+- "Will Trump win the 2024 election?" → "trump OR election OR vote"
+- "Will OpenAI release GPT-5 in 2025?" → "openai OR gpt5 OR gpt-5 OR chatgpt"
 - "Will Ethereum flip Bitcoin market cap?" → "ethereum OR ETH OR bitcoin OR BTC"
-- "Will there be a US recession in 2025?" → "recession OR economy OR inflation"
+- "Will the Fed cut interest rates?" → "fed OR federal reserve OR interest rates OR rate cut"
+- "Will Tesla stock reach $500?" → "tesla OR TSLA OR elon musk"
 
-WRONG - NEVER DO THIS:
-- "(bitcoin OR BTC) (price OR 100k)" ← WRONG: spaces act as AND
-- "bitcoin AND price" ← WRONG: AND is too restrictive
-- "(trump) (election)" ← WRONG: two groups = AND logic
-- "bitcoin price 100k" ← WRONG: spaces = AND
-
-Return ONLY a flat list of OR'd keywords. Nothing else."""
+IMPORTANT: Return a SINGLE group of OR'd keywords. DO NOT use multiple space-separated groups.
+We want BROAD coverage - the semantic filter will handle relevance later."""
 
 
 @dataclass
 class SemanticFilterConfig:
     """Configuration for the semantic filter"""
 
-    max_tweets_to_fetch: int = 100  # X API allows up to 100 per query
+    max_tweets_to_fetch: int = 200  # Cast a wide net, filter with Grok
     max_tweets_to_return: int = 15
     min_relevance_score: float = 0.3
     lookback_days: int = 7  # X API recent search only allows 7 days max
     include_retweets: bool = False
     include_replies: bool = True  # Replies often contain good signal
     lang: str = "en"
+    verified_only: bool = False  # Don't restrict to verified - filter by sphere instead
 
 
 class SemanticFilter:
@@ -176,7 +192,7 @@ class SemanticFilter:
     async def filter(
         self,
         question: str,
-        community: str,
+        sphere: str,
         topic: str | None = None,
     ) -> SemanticFilterOutput:
         """
@@ -184,46 +200,47 @@ class SemanticFilter:
         
         Args:
             question: The prediction market question (e.g., "Will Bitcoin reach $100k by end of 2025?")
-            community: Community to search (e.g., "crypto_web3", "tech_vc", "maga_right")
+            sphere: Sphere of influence to search (e.g., "fintwit_market", "eacc_sovereign", "america_first")
             topic: Optional topic override for x_search. If not provided, extracted from question.
         
         Returns:
             SemanticFilterOutput with relevant tweets, summary, and metadata
         """
-        # Validate community
-        if community not in COMMUNITIES:
-            valid = ", ".join(COMMUNITIES.keys())
-            raise ValueError(f"Invalid community '{community}'. Valid options: {valid}")
+        # Validate sphere
+        if sphere not in SPHERES:
+            valid = ", ".join(SPHERES.keys())
+            raise ValueError(f"Invalid sphere '{sphere}'. Valid options: {valid}")
 
-        # Step 1: Fetch tweets via x_search
-        tweets = await self._fetch_tweets(question, community, topic)
+        # Get sphere data for filtering context
+        sphere_data = get_sphere(sphere)
+        
+        # Step 1: Fetch tweets via x_search (keyword-only, no user filter)
+        tweets = await self._fetch_tweets(question, sphere, topic)
         
         if not tweets:
             logger.warning(f"No tweets found for question: {question[:50]}...")
             return SemanticFilterOutput(
                 relevant_tweets=[],
-                summary="No tweets found for this topic in the specified community.",
-                overall_sentiment="neutral",
-                confidence=0.0,
+                summary="No tweets found for this topic.",
                 total_tweets_analyzed=0,
                 relevant_tweet_count=0,
             )
 
-        # Step 2: Use Grok to semantically filter and rank
-        filtered_output = await self._semantic_filter(question, tweets)
+        # Step 2: Use Grok to semantically filter by relevance AND sphere alignment
+        filtered_output = await self._semantic_filter(question, tweets, sphere_data)
         
         return filtered_output
 
     async def _fetch_tweets(
         self,
         question: str,
-        community: str,
+        sphere: str,
         topic: str | None,
     ) -> list[dict[str, Any]]:
-        """Fetch tweets from x_search"""
-        community_users = get_community_users(community)
-        if not community_users:
-            logger.error(f"No users found for community: {community}")
+        """Fetch tweets from x_search using keyword-only search"""
+        self._sphere_data = get_sphere(sphere)
+        if not self._sphere_data:
+            logger.error(f"Sphere not found: {sphere}")
             return []
 
         # Use provided topic or extract optimized boolean query from question
@@ -232,20 +249,20 @@ class SemanticFilter:
         else:
             search_topic = await self._extract_search_query(question)
         
-        # Build x_search payload
+        # Build x_search payload - keyword-only search (no username filter)
         start_time = datetime.now(UTC) - timedelta(days=self.config.lookback_days)
         payload = {
             "topic": search_topic,
-            "username": community_users[0],  # Seed user
+            # No username - keyword-only search
             "start_time": start_time.isoformat(),
             "max_tweets": self.config.max_tweets_to_fetch,
-            "community": community,
             "lang": self.config.lang,
             "include_retweets": self.config.include_retweets,
             "include_replies": self.config.include_replies,
+            "verified_only": self.config.verified_only,
         }
 
-        logger.info(f"Fetching tweets for query '{search_topic}' from {community} community")
+        logger.info(f"Keyword search: '{search_topic}' (will filter for {self._sphere_data.name})")
 
         try:
             # Pass bearer token from app config to x_search
@@ -311,17 +328,40 @@ class SemanticFilter:
         self,
         question: str,
         tweets: list[dict[str, Any]],
+        sphere_data: Any = None,
     ) -> SemanticFilterOutput:
-        """Use Grok to semantically filter and rank tweets"""
+        """Use Grok to semantically filter and rank tweets by relevance AND sphere alignment"""
+        from x_search.communities import Sphere
         
         # Format tweets for Grok
         tweets_text = self._format_tweets_for_grok(tweets)
         
-        system_prompt = SEMANTIC_FILTER_PROMPT.format(question=question)
+        # Include current date for temporal context
+        now = datetime.now(UTC)
+        current_date = now.strftime("%Y-%m-%d")
         
-        user_message = f"""Analyze these {len(tweets)} tweets and filter for relevance to the prediction question.
+        # Build sphere description for the prompt
+        if sphere_data and isinstance(sphere_data, Sphere):
+            sphere_name = sphere_data.name
+            sphere_description = f"""Vibe: {sphere_data.vibe}
+Typical participants: {sphere_data.followers}
+Core beliefs: {sphere_data.core_beliefs}"""
+        else:
+            sphere_name = "General"
+            sphere_description = "General audience - no specific sphere filter applied."
+        
+        system_prompt = SEMANTIC_FILTER_PROMPT.format(
+            question=question,
+            current_date=current_date,
+            sphere_name=sphere_name,
+            sphere_description=sphere_description,
+        )
+        
+        user_message = f"""Analyze these {len(tweets)} tweets and filter for relevance to the prediction question AND alignment with the target sphere.
 
 PREDICTION QUESTION: {question}
+
+TARGET SPHERE: {sphere_name}
 
 TWEETS TO ANALYZE:
 {tweets_text}
@@ -355,8 +395,7 @@ Return your analysis as JSON matching the SemanticFilterOutput schema."""
             output.total_tweets_analyzed = len(tweets)
             
             logger.info(
-                f"Semantic filter: {output.relevant_tweet_count}/{len(tweets)} tweets relevant, "
-                f"sentiment={output.overall_sentiment}, confidence={output.confidence:.2f}"
+                f"Semantic filter: {output.relevant_tweet_count}/{len(tweets)} tweets relevant"
             )
             
             return output
@@ -376,11 +415,18 @@ Return your analysis as JSON matching the SemanticFilterOutput schema."""
             text = tweet.get("text", "")[:500]  # Truncate long tweets
             likes = tweet.get("like_count", 0)
             retweets = tweet.get("retweet_count", 0)
+            created_at = tweet.get("created_at", "unknown")
             
+            # Format timestamp for readability
+            if isinstance(created_at, datetime):
+                timestamp_str = created_at.strftime("%Y-%m-%d %H:%M UTC")
+            else:
+                timestamp_str = str(created_at)[:19]  # Truncate ISO string
+
             lines.append(
-                f"[{i}] @{author} (❤️ {likes}, 🔄 {retweets}):\n{text}\n"
+                f"[{i}] @{author} | {timestamp_str} | ❤️ {likes} 🔄 {retweets}\n{text}\n"
             )
-        
+
         return "\n".join(lines)
 
     def _fallback_output(self, tweets: list[dict[str, Any]]) -> SemanticFilterOutput:
@@ -392,24 +438,30 @@ Return your analysis as JSON matching the SemanticFilterOutput schema."""
             reverse=True,
         )[:self.config.max_tweets_to_return]
 
-        relevant = [
-            RelevantTweet(
-                author=f"@{t.get('author_username', 'unknown')}",
-                text=t.get("text", "")[:300],
-                relevance_score=0.5,  # Default score
-                relevance_reason="Ranked by engagement (fallback mode)",
-                sentiment="neutral",
-                likes=t.get("like_count", 0),
-                retweets=t.get("retweet_count", 0),
+        relevant = []
+        for t in sorted_tweets:
+            created_at = t.get("created_at", "")
+            if isinstance(created_at, datetime):
+                created_at_str = created_at.isoformat()
+            else:
+                created_at_str = str(created_at) if created_at else "unknown"
+            
+            relevant.append(
+                RelevantTweet(
+                    author=f"@{t.get('author_username', 'unknown')}",
+                    text=t.get("text", "")[:300],
+                    created_at=created_at_str,
+                    relevance_score=0.5,  # Default score
+                    relevance_reason="Ranked by engagement (fallback mode)",
+                    signal="uncertain",
+                    likes=t.get("like_count", 0),
+                    retweets=t.get("retweet_count", 0),
+                )
             )
-            for t in sorted_tweets
-        ]
 
         return SemanticFilterOutput(
             relevant_tweets=relevant,
             summary="Fallback mode: tweets ranked by engagement, not semantic relevance.",
-            overall_sentiment="neutral",
-            confidence=0.2,
             total_tweets_analyzed=len(tweets),
             relevant_tweet_count=len(relevant),
         )
@@ -417,7 +469,7 @@ Return your analysis as JSON matching the SemanticFilterOutput schema."""
 
 async def semantic_search(
     question: str,
-    community: str,
+    sphere: str,
     topic: str | None = None,
     config: SemanticFilterConfig | None = None,
 ) -> SemanticFilterOutput:
@@ -426,7 +478,7 @@ async def semantic_search(
     
     Args:
         question: The prediction market question
-        community: Community to search (e.g., "crypto_web3", "tech_vc")
+        sphere: Sphere of influence to search (e.g., "fintwit_market", "eacc_sovereign")
         topic: Optional topic override for x_search
         config: Optional configuration
     
@@ -436,11 +488,11 @@ async def semantic_search(
     Example:
         >>> result = await semantic_search(
         ...     question="Will Bitcoin reach $100k by end of 2025?",
-        ...     community="crypto_web3"
+        ...     sphere="fintwit_market"
         ... )
         >>> print(result.summary)
         >>> for tweet in result.relevant_tweets:
-        ...     print(f"{tweet.author}: {tweet.relevance_score:.2f} - {tweet.sentiment}")
+        ...     print(f"{tweet.author}: {tweet.relevance_score:.2f} - {tweet.signal}")
     """
     filter_instance = SemanticFilter(config=config)
-    return await filter_instance.filter(question, community, topic)
+    return await filter_instance.filter(question, sphere, topic)

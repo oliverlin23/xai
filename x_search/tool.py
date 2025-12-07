@@ -14,7 +14,7 @@ from typing import Any, Iterable
 import httpx
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, validator
 
-from .communities import COMMUNITIES
+from .communities import SPHERES, get_sphere
 
 LOGGER = logging.getLogger("x_search")
 
@@ -31,15 +31,22 @@ class XSearchRequest(BaseModel):
     """Incoming request payload."""
 
     topic: str = Field(..., min_length=1, max_length=256)
-    username: str = Field(..., min_length=1, max_length=80)
+    username: str | None = Field(
+        default=None,
+        description="Optional seed username. If None, performs keyword-only search.",
+    )
     start_time: datetime
     max_tweets: int = Field(default=50, ge=1, le=200)
     lang: str | None = Field(default="en", max_length=8)
     include_retweets: bool = False
     include_replies: bool = False
-    community: str | None = Field(
+    verified_only: bool = Field(
+        default=False,
+        description="Only return posts from verified users (adds is:verified to query)",
+    )
+    sphere: str | None = Field(
         default=None,
-        description="Community sphere to search (e.g., tech_vc, maga_right)",
+        description="Sphere of influence for context (e.g., eacc_sovereign, fintwit_market)",
     )
 
     @validator("topic")
@@ -47,17 +54,19 @@ class XSearchRequest(BaseModel):
         return value.strip()
 
     @validator("username")
-    def _sanitize_username(cls, value: str) -> str:
+    def _sanitize_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip().lstrip("@")
         if not value:
-            raise ValueError("username cannot be empty")
+            return None
         return value
 
-    @validator("community")
-    def _validate_community(cls, value: str | None) -> str | None:
-        if value is not None and value not in COMMUNITIES:
-            valid = ", ".join(COMMUNITIES.keys())
-            raise ValueError(f"Invalid community '{value}'. Valid options: {valid}")
+    @validator("sphere")
+    def _validate_sphere(cls, value: str | None) -> str | None:
+        if value is not None and value not in SPHERES:
+            valid = ", ".join(SPHERES.keys())
+            raise ValueError(f"Invalid sphere '{value}'. Valid options: {valid}")
         return value
 
 
@@ -103,6 +112,9 @@ class XSearchConfig(BaseModel):
     max_related_users: int = 0
     graph_concurrency: int = 8
     search_concurrency: int = 1
+    # Twitter API v2 Basic tier has 512 char query limit
+    # Batch usernames to stay under limit (8-10 users per batch is safe)
+    max_users_per_query: int = 8
 
     @validator("bearer_token")
     def _require_token(cls, value: str | None) -> str:
@@ -239,19 +251,68 @@ class XSearchTool:
             raise ValueError(f"invalid payload: {exc}") from exc
 
         async with XApiClient(self._config) as client:
-            seed_user = await client.get_user_by_username(request.username)
-            related_users = await self._expand_related_users(client, seed_user)
-            tweets = await self._fetch_tweets(client, seed_user, related_users, request)
+            # If no username provided, do keyword-only search
+            if request.username is None:
+                tweets = await self._fetch_tweets_keyword_only(client, request)
+                seed_user_str = "(keyword search)"
+                related_users = []
+            else:
+                seed_user = await client.get_user_by_username(request.username)
+                related_users = await self._expand_related_users(client, seed_user)
+                tweets = await self._fetch_tweets(client, seed_user, related_users, request)
+                seed_user_str = seed_user.username
 
         response = XSearchResponse(
             topic=request.topic,
-            seed_user=seed_user.username,
+            seed_user=seed_user_str,
             start_time=request.start_time,
             generated_at=_utc_now(),
             tweets=tweets,
             related_users=related_users,
         )
         return response.model_dump()
+
+    async def _fetch_tweets_keyword_only(
+        self,
+        client: XApiClient,
+        request: XSearchRequest,
+    ) -> list[TweetResult]:
+        """Fetch tweets using keyword search only (no user filter)."""
+        query = self._build_query(
+            topic=request.topic,
+            usernames=[],  # No user filter
+            lang=request.lang,
+            include_retweets=request.include_retweets,
+            include_replies=request.include_replies,
+            verified_only=request.verified_only,
+        )
+        
+        LOGGER.info("Keyword-only search query: %s", query[:100])
+        
+        # Fetch in batches since X API limits to 100 per request
+        all_tweets: list[TweetResult] = []
+        remaining = request.max_tweets
+        
+        # For now, single request (X API recent search doesn't support cursor well)
+        payload = await client.search_tweets(
+            query=query,
+            start_time=request.start_time,
+            max_results=min(100, remaining),
+        )
+        all_tweets.extend(self._map_tweets(payload))
+        
+        # Log sphere context if specified
+        if request.sphere:
+            sphere = get_sphere(request.sphere)
+            if sphere:
+                LOGGER.info(
+                    "Sphere context for filtering: %s",
+                    sphere.name,
+                )
+        
+        deduped = self._dedupe_tweets(all_tweets)
+        deduped.sort(key=lambda t: t.created_at, reverse=True)
+        return deduped[: request.max_tweets]
 
     async def _expand_related_users(
         self,
@@ -318,6 +379,7 @@ class XSearchTool:
             lang=request.lang,
             include_retweets=request.include_retweets,
             include_replies=request.include_replies,
+            verified_only=request.verified_only,
         )
         seed_payload = await client.search_tweets(
             query=seed_query,
@@ -326,28 +388,15 @@ class XSearchTool:
         )
         all_tweets.extend(self._map_tweets(seed_payload))
 
-        # If a community is specified, batch search all community members
-        if request.community:
-            community_users = COMMUNITIES.get(request.community, [])
-            # Filter out the seed user if they're in the community
-            community_users = [
-                u for u in community_users if u.lower() != seed_user.username.lower()
-            ]
-
-            if community_users:
-                community_query = self._build_query(
-                    topic=request.topic,
-                    usernames=community_users,
-                    lang=request.lang,
-                    include_retweets=request.include_retweets,
-                    include_replies=request.include_replies,
+        # Log sphere context if specified (spheres are descriptive, not user lists)
+        if request.sphere:
+            sphere = get_sphere(request.sphere)
+            if sphere:
+                LOGGER.info(
+                    "Search context: %s sphere - %s",
+                    sphere.name,
+                    sphere.vibe[:100],
                 )
-                community_payload = await client.search_tweets(
-                    query=community_query,
-                    start_time=request.start_time,
-                    max_results=min(100, request.max_tweets),
-                )
-                all_tweets.extend(self._map_tweets(community_payload))
 
         # Search related users individually (from graph expansion)
         if related_users:
@@ -361,6 +410,7 @@ class XSearchTool:
                         lang=request.lang,
                         include_retweets=request.include_retweets,
                         include_replies=request.include_replies,
+                        verified_only=request.verified_only,
                     )
                     payload = await client.search_tweets(
                         query=query,
@@ -426,20 +476,26 @@ class XSearchTool:
         lang: str | None,
         include_retweets: bool,
         include_replies: bool,
+        verified_only: bool = False,
     ) -> str:
-        # Build from clause - single user or OR'd list
-        if len(usernames) == 1:
-            from_clause = f"from:{usernames[0]}"
-        else:
-            from_clause = "(" + " OR ".join(f"from:{u}" for u in usernames) + ")"
-
-        clauses = [f"({topic})", from_clause]
+        clauses = [f"({topic})"]
+        
+        # Build from clause only if usernames provided
+        if usernames:
+            if len(usernames) == 1:
+                from_clause = f"from:{usernames[0]}"
+            else:
+                from_clause = "(" + " OR ".join(f"from:{u}" for u in usernames) + ")"
+            clauses.append(from_clause)
+        
         if not include_retweets:
             clauses.append("-is:retweet")
         if not include_replies:
             clauses.append("-is:reply")
         if lang:
             clauses.append(f"lang:{lang}")
+        if verified_only:
+            clauses.append("is:verified")
         return " ".join(clauses)
 
 
