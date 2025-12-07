@@ -71,54 +71,51 @@ const Cubicle = ({
     : "No trades yet"
 
   return (
-    <div className="relative w-[180px] h-[180px] group">
-      {/* Background is now fully transparent to blend with floor */}
-      <div className="absolute inset-0 overflow-hidden">
-        {/* Subtle shadow to ground the unit, but no distinct floor tile */}
-      </div>
-
+    <div className="relative w-[180px] h-[180px]">
       <PartitionFrame />
 
-      {/* Hover card */}
-      <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-40 px-3 py-2 rounded-md bg-slate-900/90 border border-white/10 shadow-lg text-xs text-slate-100 opacity-0 transition-opacity duration-150 group-hover:opacity-100 whitespace-nowrap">
-        <div className="font-semibold">{name}</div>
-        <div className="text-[11px] text-slate-300">Role: {role}</div>
-        <div className="text-[11px] text-slate-300">
-          Community: {community || "TBD"}
+      {/* Smaller hover target to reduce accidental triggers */}
+      <div className="absolute inset-4 group">
+        {/* Hover card */}
+        <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-40 px-3 py-2 rounded-md bg-slate-900/90 border border-white/10 shadow-lg text-xs text-slate-100 opacity-0 transition-opacity duration-150 group-hover:opacity-100 whitespace-nowrap">
+          <div className="font-semibold">{name}</div>
+          <div className="text-[11px] text-slate-300">Role: {role}</div>
+          <div className="text-[11px] text-slate-300">
+            Community: {community || "TBD"}
+          </div>
+          <div className="text-[11px] text-slate-200 mt-1">
+            Last trade: {tradeLine}
+          </div>
         </div>
-        <div className="text-[11px] text-slate-200 mt-1">
-          Last trade: {tradeLine}
+
+        {/* Worker */}
+        <img
+          src={sprite}
+          className="absolute top-4 left-1/2 -translate-x-1/2 w-[76px] h-[76px] object-contain pixelated z-20 drop-shadow-[0_10px_12px_rgba(0,0,0,0.25)] transition-transform group-hover:-translate-y-1"
+          alt={name}
+        />
+
+        {/* Optional decor */}
+        {hasPlant && (
+          <img
+            src="/sprites/plant.png"
+            className="absolute bottom-3 right-2 w-10 h-10 object-contain pixelated z-10 opacity-90"
+            alt="plant"
+          />
+        )}
+        {hasTrash && (
+          <img
+            src="/sprites/Trash.png"
+            className="absolute bottom-3 left-2 w-10 h-10 object-contain pixelated z-10 opacity-80"
+            alt="trash"
+          />
+        )}
+
+        {/* Status dot */}
+        <div className="absolute top-1 left-1 z-30 flex items-center gap-2">
+          <div className={`h-3 w-3 rounded-full ${statusMeta.className}`} title={statusMeta.label} />
         </div>
       </div>
-
-      {/* Worker */}
-      <img
-        src={sprite}
-        className="absolute top-6 left-1/2 -translate-x-1/2 w-[80px] h-[80px] object-contain pixelated z-20 drop-shadow-[0_10px_12px_rgba(0,0,0,0.25)] transition-transform group-hover:-translate-y-1"
-        alt={name}
-      />
-
-      {/* Optional decor */}
-      {hasPlant && (
-        <img
-          src="/sprites/plant.png"
-          className="absolute bottom-4 right-3 w-10 h-10 object-contain pixelated z-10 opacity-90"
-          alt="plant"
-        />
-      )}
-      {hasTrash && (
-        <img
-          src="/sprites/Trash.png"
-          className="absolute bottom-4 left-3 w-10 h-10 object-contain pixelated z-10 opacity-80"
-          alt="trash"
-        />
-      )}
-
-      {/* Status dot */}
-      <div className="absolute top-2 left-2 z-30 flex items-center gap-2">
-        <div className={`h-3 w-3 rounded-full ${statusMeta.className}`} title={statusMeta.label} />
-      </div>
-
     </div>
   )
 }

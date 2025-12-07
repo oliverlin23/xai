@@ -1,9 +1,12 @@
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Press_Start_2P } from "next/font/google"
 import "./globals.css"
 import { Providers } from "./providers"
 
-const inter = Inter({ subsets: ["latin"] })
+const pressStart = Press_Start_2P({
+  weight: "400",
+  subsets: ["latin"],
+})
 
 export const metadata: Metadata = {
   title: "Superforecaster - AI-Powered Predictions",
@@ -17,7 +20,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={pressStart.className}>
         <Providers>
           <div className="min-h-screen">
             <main>

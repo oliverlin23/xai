@@ -68,7 +68,6 @@ export default function Page() {
             >
               Enter the Floor
             </a>
-            <span className="text-white/80 text-sm">/office</span>
           </div>
         </div>
       </div>
