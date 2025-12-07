@@ -9,14 +9,14 @@ class Settings(BaseSettings):
     """Application settings"""
 
     # Grok API
-    grok_api_key: str
+    grok_api_key: str = ""
 
     # X API (for tweet lookup)
-    x_api_bearer_token: str = ""
+    x_bearer_token: str = ""
 
-    # Supabase
-    supabase_url: str
-    supabase_service_key: str
+    # Supabase (optional - only needed for persistence)
+    supabase_url: str = ""
+    supabase_service_key: str = ""
 
     # Agent Configuration
     agent_timeout_seconds: int = 300
