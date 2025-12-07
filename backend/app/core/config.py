@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     grok_api_key: str
 
     # X API (for tweet lookup)
-    x_api_bearer_token: str = ""
+    x_bearer_token: str = ""
 
     # Supabase
     supabase_url: str
