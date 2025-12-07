@@ -19,10 +19,18 @@ Usage:
     
     # Save results to file
     uv run python scripts/test_user_agent.py --all --save
+    
+    # Continuous polling mode (prediction only)
+    uv run python scripts/test_user_agent.py --user oliver --poll
+    
+    # Continuous polling with market-making (requires valid session)
+    uv run python scripts/test_user_agent.py --user oliver --poll --session <uuid>
+    uv run python scripts/test_user_agent.py --user oliver --poll --session <uuid> --spread 6 --quantity 50
 
 Requires:
     - X_BEARER_TOKEN in .env (for X API)
     - GROK_API_KEY in .env (for Grok)
+    - SUPABASE_URL and SUPABASE_SERVICE_KEY in .env (for market making)
 """
 import argparse
 import asyncio
@@ -45,6 +53,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from app.traders.user_agent import UserAgent, USER_ACCOUNT_MAPPINGS, get_user_agent_names
+from app.market.client import SupabaseMarketMaker
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -452,6 +461,29 @@ def parse_args():
         action="store_true",
         help="List all configured users and their X accounts"
     )
+    parser.add_argument(
+        "--session",
+        type=str,
+        default=None,
+        help="Supabase session ID for market making (required for --poll with trading)"
+    )
+    parser.add_argument(
+        "--spread",
+        type=int,
+        default=4,
+        help="Market making spread width in cents (default: 4)"
+    )
+    parser.add_argument(
+        "--quantity",
+        type=int,
+        default=100,
+        help="Order quantity (default: 100)"
+    )
+    parser.add_argument(
+        "--no-trade",
+        action="store_true",
+        help="Skip market making even if --session is provided"
+    )
     return parser.parse_args()
 
 
@@ -460,18 +492,42 @@ async def run_poll_mode(
     target_username: Optional[str],
     market_data_provider: Callable[[], Awaitable[Dict[str, object]] | Dict[str, object]],
     interval_seconds: int = 10,
+    session_id: Optional[str] = None,
+    spread: int = 4,
+    quantity: int = 100,
 ) -> None:
     """
     Poll the target user's posts periodically (default every 10s) using x_search username filter.
+    
+    If session_id is provided, also performs market making after each prediction:
+    - Cancels existing orders for this trader
+    - Places new bid/ask orders around the prediction
+    - Triggers order matching atomically
     """
     tracked = target_username or USER_ACCOUNT_MAPPINGS.get(user, user)
-    print("\n" + "=" * 60)
-    print("📡 POLLING MODE")
-    print("=" * 60)
+    
+    # Determine trader_name - must match trader_name enum in DB
+    # User agents use their user key as trader_name
+    trader_name = user if user in ['oliver', 'owen', 'skylar', 'tyler'] else None
+    
+    # Initialize market maker if session provided
+    market_maker: Optional[SupabaseMarketMaker] = None
+    if session_id and trader_name:
+        market_maker = SupabaseMarketMaker()
+    
+    print("\n" + "=" * 70)
+    print("📡 CONTINUOUS POLLING MODE" + (" (with trading)" if market_maker else ""))
+    print("=" * 70)
     print(f"User agent: {user}")
     print(f"Tracking: @{tracked}")
+    if market_maker:
+        print(f"Session ID: {session_id}")
+        print(f"Trader name: {trader_name}")
+        print(f"Market making spread: {spread} (bid @ pred-{spread//2}, ask @ pred+{spread//2})")
+        print(f"Order quantity: {quantity}")
     print(f"Polling interval: {interval_seconds}s")
-    print("Press Ctrl+C to stop.\n")
+    print("Press Ctrl+C to stop.")
+    print("=" * 70 + "\n")
 
     agent = UserAgent(
         name=user,
@@ -481,26 +537,82 @@ async def run_poll_mode(
         lookback_days=7,
     )
 
+    round_number = 1
     try:
         while True:
-            data_or_coro = market_data_provider()
-            market_data = await data_or_coro if asyncio.iscoroutine(data_or_coro) else data_or_coro
             start_ts = datetime.now().strftime("%H:%M:%S")
-            result = await agent.execute(market_data)
-            if result.get("skipped"):
-                print(f"[{start_ts}] ⏭️  no new posts for @{tracked}")
-                print(json.dumps(result, indent=2, ensure_ascii=False))
-            else:
-                prediction = result.get("prediction")
-                signal = result.get("signal", "uncertain")
-                posts = result.get("posts_analyzed", 0)
-                print(
-                    f"[{start_ts}] 🎯 prediction={prediction}% signal={signal} posts={posts}"
-                )
-                print(json.dumps(result, indent=2, ensure_ascii=False))
+            print(f"[{start_ts}] 🔄 Round {round_number}...")
+            
+            try:
+                # Get market data (may include live orderbook if market_maker exists)
+                data_or_coro = market_data_provider()
+                market_data = await data_or_coro if asyncio.iscoroutine(data_or_coro) else data_or_coro
+                
+                # If we have market maker, fetch live orderbook data
+                if market_maker and session_id:
+                    orderbook = market_maker.get_orderbook(session_id)
+                    recent_trades = market_maker.get_recent_trades(session_id, limit=5)
+                    market_data["order_book"] = orderbook
+                    market_data["recent_trades"] = recent_trades
+                
+                # Run prediction
+                result = await agent.execute(market_data)
+                
+                if result.get("skipped"):
+                    print(f"[{start_ts}] ⏭️  no new posts for @{tracked}")
+                else:
+                    prediction = result.get("prediction", 50)
+                    signal = result.get("signal", "uncertain")
+                    posts = result.get("posts_analyzed", 0)
+                    
+                    print(f"[{start_ts}] 🎯 prediction={prediction}% signal={signal} posts={posts}")
+                    
+                    # Market making - atomically cancel, place, and match
+                    if market_maker and session_id and trader_name:
+                        mm_result = market_maker.place_market_making_orders(
+                            session_id=session_id,
+                            trader_name=trader_name,
+                            prediction=prediction,
+                            spread=spread,
+                            quantity=quantity,
+                        )
+                        
+                        if "error" not in mm_result:
+                            bid_price = mm_result.get("bid_price", prediction - spread // 2)
+                            ask_price = mm_result.get("ask_price", prediction + spread // 2)
+                            print(f"[{start_ts}] 📈 Market making: bid={bid_price}¢ ask={ask_price}¢ qty={quantity}")
+                            
+                            # Matching happens atomically in the SQL function
+                            if mm_result.get("trades_count", 0) > 0:
+                                print(f"[{start_ts}] 🔄 Matched {mm_result['trades_count']} trades, volume={mm_result['volume']}")
+                        else:
+                            print(f"[{start_ts}] ⚠️  Market making failed: {mm_result.get('error')}")
+                    
+                    # Print summary
+                    print(json.dumps({
+                        "round": round_number,
+                        "prediction": prediction,
+                        "signal": signal,
+                        "posts_analyzed": posts,
+                        "analysis": result.get("analysis", "")[:200] + "...",
+                    }, indent=2, ensure_ascii=False))
+                
+                round_number += 1
+                
+            except Exception as e:
+                print(f"[{start_ts}] ❌ Round failed: {e}")
+                logger.exception("Round failed")
+            
             await asyncio.sleep(interval_seconds)
+            
     except KeyboardInterrupt:
-        print("\n⏹️  Polling stopped by user.")
+        print("\n\n⏹️  Polling stopped by user.")
+    finally:
+        # Clean up - cancel any remaining orders
+        if market_maker and session_id and trader_name:
+            print(f"🧹 Cleaning up: cancelling orders for {trader_name}...")
+            cancelled = market_maker.cancel_all_orders(session_id, trader_name)
+            print(f"   Cancelled {cancelled} orders.")
 
 
 async def main():
@@ -562,11 +674,21 @@ async def main():
 
         # Polling mode (periodic)
         if args.poll:
+            # Warn if session not provided for trading
+            if args.session and not args.no_trade:
+                if user not in ['oliver', 'owen', 'skylar', 'tyler']:
+                    print(f"⚠️  User '{user}' is not a valid trader_name enum value.")
+                    print("   Trading will be disabled. Use one of: oliver, owen, skylar, tyler")
+                    args.session = None
+            
             await run_poll_mode(
                 user=user,
                 target_username=tracked,
                 market_data_provider=lambda: market_data,
                 interval_seconds=args.poll_interval,
+                session_id=args.session if not args.no_trade else None,
+                spread=args.spread,
+                quantity=args.quantity,
             )
             return
 

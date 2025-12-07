@@ -4,7 +4,7 @@ Traders module - Contains prediction market trading agents
 Available agents:
 - NoiseTrader: Monitors X spheres of influence for prediction context
 - UserAgent: Monitors specific X accounts for prediction context
-- FundamentalAgent: (Coming soon) Fundamental analysis-based trading
+- FundamentalTrader: Trades on market data and prior reasoning only (no X API)
 """
 
 from app.traders.noise_agent import (
@@ -20,6 +20,13 @@ from app.traders.user_agent import (
     USER_ACCOUNT_MAPPINGS,
     create_user_agent,
     get_user_agent_names,
+)
+from app.traders.fundamental_agent import (
+    FundamentalTrader,
+    FundamentalAgent,  # Backwards compatibility alias
+    FundamentalTraderOutput,
+    FUNDAMENTAL_TRADER_TYPES,
+    get_fundamental_trader_names,
 )
 from app.traders.semantic_filter import (
     SemanticFilter,
@@ -42,6 +49,12 @@ __all__ = [
     "USER_ACCOUNT_MAPPINGS",
     "create_user_agent",
     "get_user_agent_names",
+    # Fundamental Trader
+    "FundamentalTrader",
+    "FundamentalAgent",
+    "FundamentalTraderOutput",
+    "FUNDAMENTAL_TRADER_TYPES",
+    "get_fundamental_trader_names",
     # Semantic Filter
     "SemanticFilter",
     "SemanticFilterConfig",
