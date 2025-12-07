@@ -90,7 +90,7 @@ COMMUNITIES: dict[str, list[str]] = {
         "APompliano",      # Anthony Pompliano - Bitcoin
         "tyler",           # Tyler Winklevoss
         "cameron",         # Cameron Winklevoss
-        "michael_saylor",  # Michael Saylor - MicroStrategy
+        "saylor",  # Michael Saylor - MicroStrategy
         "aantonop",        # Andreas Antonopoulos
     ],
 
