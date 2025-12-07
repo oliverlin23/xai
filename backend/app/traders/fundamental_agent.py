@@ -97,7 +97,7 @@ class FundamentalTraderOutput(BaseModel):
     # Metadata
     baseline_probability: int = Field(
         default=50,
-        description="Market baseline probability. Used as reference, not anchor."
+        description="Market baseline probability."
     )
     
     # Memory for next round

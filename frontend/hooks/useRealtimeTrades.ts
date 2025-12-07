@@ -38,10 +38,17 @@ export interface TraderState {
   updated_at: string
 }
 
+// Track which traders are flashing (just made a trade)
+export interface FlashingTrader {
+  name: string
+  type: "buyer" | "seller"  // green for buyer, red for seller
+}
+
 interface RealtimeTradingData {
   trades: Trade[]
   traderStates: TraderState[]
   lastTrade: Trade | null
+  flashingTraders: FlashingTrader[]  // Traders currently flashing from a trade
 }
 
 /**
@@ -53,6 +60,7 @@ export function useRealtimeTrades(sessionId: string) {
     trades: [],
     traderStates: [],
     lastTrade: null,
+    flashingTraders: [],
   })
 
   useEffect(() => {
@@ -77,6 +85,7 @@ export function useRealtimeTrades(sessionId: string) {
         trades: trades || [],
         traderStates: traderStates || [],
         lastTrade: trades && trades.length > 0 ? trades[trades.length - 1] : null,
+        flashingTraders: [],
       })
     }
 
@@ -95,11 +104,27 @@ export function useRealtimeTrades(sessionId: string) {
         },
         (payload) => {
           const newTrade = payload.new as Trade
+          
+          // Set flashing traders (buyer=green, seller=red)
+          const flashers: FlashingTrader[] = [
+            { name: newTrade.buyer_name, type: "buyer" },
+            { name: newTrade.seller_name, type: "seller" },
+          ]
+          
           setData((prev) => ({
             ...prev,
             trades: [...prev.trades, newTrade],
             lastTrade: newTrade,
+            flashingTraders: flashers,
           }))
+          
+          // Clear flashing after 500ms
+          setTimeout(() => {
+            setData((prev) => ({
+              ...prev,
+              flashingTraders: [],
+            }))
+          }, 500)
         }
       )
       // Subscribe to trader state updates

@@ -5,7 +5,7 @@ import { useTradingStore } from "@/lib/store"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { api } from "@/lib/api"
-import { useRealtimeTrades, Trade, TraderState } from "@/hooks/useRealtimeTrades"
+import { useRealtimeTrades, Trade, TraderState, FlashingTrader } from "@/hooks/useRealtimeTrades"
 import { Press_Start_2P } from "next/font/google"
 import { PriceGraph } from "@/components/trading/PriceGraph"
 
@@ -69,6 +69,8 @@ const statusStyles = {
   analyzing: { label: "Processing", className: "bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.45)]" },
   "submitting-order": { label: "Submitting", className: "bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.45)]" },
   offline: { label: "Offline", className: "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.45)]" },
+  buying: { label: "Buying", className: "bg-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.7)] animate-pulse" },
+  selling: { label: "Selling", className: "bg-red-400 shadow-[0_0_15px_rgba(248,113,113,0.7)] animate-pulse" },
 }
 
 const PartitionFrame = () => (
@@ -174,7 +176,7 @@ interface AgentInfo {
   role: string
   type: string
   description: string
-  status: "idle" | "analyzing" | "offline"
+  status: "idle" | "analyzing" | "offline" | "buying" | "selling"
   prediction?: number
   traderState?: TraderState
 }
@@ -255,7 +257,10 @@ const TradeFeed = ({ trades }: { trades: Trade[] }) => {
           </div>
         ) : (
           recentTrades.map((trade) => (
-            <div key={trade.id} className="px-3 py-2 border-b border-[#2d3748]/50 hover:bg-[#1a1f2e]/50">
+            <div 
+              key={trade.id} 
+              className="px-3 py-2 border-b border-[#2d3748]/50 hover:bg-[#1a1f2e]/50"
+            >
               <div className="flex justify-between items-center text-xs">
                 <span className="text-emerald-400 font-medium">{trade.price}¢</span>
                 <span className="text-slate-400">×{trade.quantity}</span>
@@ -497,26 +502,29 @@ function OfficePageContent() {
   }, [sessionId])
 
   // Build agents with real-time state
-  // Agent status is tied to the simulation phase and trader state
+  // Agent status is ONLY tied to recent trades - yellow by default, flash on trade
   const agents: AgentInfo[] = ALL_AGENTS.map((agentConfig) => {
     const traderState = realtimeData.traderStates.find(
       (t) => t.name === agentConfig.key || t.name === agentConfig.key.toLowerCase()
     )
     
+    // Check if this agent is flashing from a recent trade
+    const flashingInfo = realtimeData.flashingTraders.find(
+      (f) => f.name === agentConfig.key || f.name === agentConfig.key.toLowerCase()
+    )
+
     // Status logic:
-    // - offline: simulation stopped
-    // - analyzing: initializing phase (superforecasters running)
-    // - idle: simulation running and trader is active
-    let status: "idle" | "analyzing" | "offline"
-    if (simulationPhase === "stopped") {
-      status = "offline"
-    } else if (simulationPhase === "initializing") {
-      status = "analyzing"  // Yellow - processing
-    } else {
-      // Running phase
-      status = traderState ? "idle" : "offline"
-    }
+    // - buying: agent just bought (flash green)
+    // - selling: agent just sold (flash red)
+    // - analyzing: default state (yellow)
+    let status: "idle" | "analyzing" | "offline" | "buying" | "selling"
     
+    if (flashingInfo) {
+      status = flashingInfo.type === "buyer" ? "buying" : "selling"
+    } else {
+      status = "analyzing"  // Default: yellow
+    }
+
     return {
       ...agentConfig,
       status,

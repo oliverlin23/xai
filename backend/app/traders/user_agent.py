@@ -65,7 +65,7 @@ class UserAgentOutput(BaseModel):
     )
     baseline_probability: int = Field(
         default=50,
-        description="Market baseline probability. Do not rely on this as an anchor."
+        description="Market baseline probability."
     )
     tracked_account: str = Field(
         default="",

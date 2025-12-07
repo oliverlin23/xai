@@ -84,7 +84,7 @@ class NoiseTraderOutput(BaseModel):
     )
     baseline_probability: int = Field(
         default=50,
-        description="Market baseline probability. Do not rely on this as an anchor."
+        description="Market baseline probability."
     )
     
     # Memory for next round
@@ -155,7 +155,6 @@ CRITICAL CALIBRATION RULES:
 - Do NOT treat 0.5% (1:199 odds) and 5% (1:19) as similarly "small" probabilities
 - Do NOT treat 90% (9:1) and 99% (99:1) as similarly "high" probabilities  
 - These represent markedly different odds - be precise with tail probabilities
-- Your baseline is the current market price - do not rely on it as an anchor.
 
 BIAS AWARENESS:
 - News has negativity bias - doesn't represent overall trends or base rates
@@ -190,7 +189,7 @@ Typical participants: {sphere_followers}
 Core beliefs of this sphere: {sphere_beliefs}
 
 Weight higher-relevance tweets more heavily. Consider source authority.
-Be contrarian if evidence warrants it - don't anchor too heavily on market price."""
+Be contrarian if evidence warrants it."""
 
 
 def _get_noise_trader_prompt(sphere_key: str) -> str:
@@ -444,7 +443,7 @@ IMPORTANT: Today's date is {current_date}. Your pretraining knowledge may be out
 RESOLUTION DATE: {resolution_date}
 {previous_notes_section}
 BASELINE FORECAST (Current Market Price): {baseline_probability}%
-This is the market's current implied probability. Do not rely on this as an anchor.
+This is the market's current implied probability.
 
 MARKET DATA:
 {market_data_text}

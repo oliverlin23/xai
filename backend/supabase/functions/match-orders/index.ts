@@ -113,9 +113,11 @@ async function matchOrders(
 
         if (fillQty <= 0) continue;
 
-        // Execution price is the resting order's price (price-time priority)
-        // The ask was there first if we're iterating through bids
-        const execPrice = ask.price;
+        // Execution price is the resting (older) order's price (price-time priority)
+        // The order with the earlier timestamp is the "maker", the newer one is the "taker"
+        const bidTime = new Date(bid.created_at).getTime();
+        const askTime = new Date(ask.created_at).getTime();
+        const execPrice = bidTime <= askTime ? bid.price : ask.price;
 
         // Create trade
         trades.push({
