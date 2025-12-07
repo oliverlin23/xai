@@ -45,41 +45,33 @@ export default function SuperforecastPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-12 px-4 pt-24">
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          AI-Powered Superforecasting
-        </h1>
-        <p className="text-xl text-gray-600">
-          23 collaborative AI agents analyze your question to produce calibrated predictions
-        </p>
-      </div>
+    <div
+      className="min-h-screen bg-cover bg-center bg-fixed"
+      style={{ backgroundImage: 'url("/groklogo.png")' }}
+    >
+      <div className="min-h-screen bg-slate-600/35 overflow-y-auto">
+        <div className="max-w-4xl mx-auto py-12 px-4 pt-24 text-slate-900">
+          <div className="text-center mb-10 drop-shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
+            <h1 className="text-4xl font-bold mb-3 text-[#0f172a]">
+              Grok-Powered Superforecasting
+            </h1>
+            <p className="text-lg text-slate-800">
+              23 collaborative Grok agents analyze your question to produce calibrated predictions
+            </p>
+          </div>
 
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <QuestionInput onSubmit={handleSubmit} isSubmitting={isSubmitting} />
-      </div>
-
-      <div className="mt-12 grid md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-lg p-6 shadow">
-          <div className="text-3xl mb-2">🔍</div>
-          <h3 className="font-bold text-lg mb-2">Factor Discovery</h3>
-          <p className="text-gray-600 text-sm">
-            Multiple agents discover diverse factors influencing your question
-          </p>
-        </div>
-        <div className="bg-white rounded-lg p-6 shadow">
-          <div className="text-3xl mb-2">✅</div>
-          <h3 className="font-bold text-lg mb-2">Validation</h3>
-          <p className="text-gray-600 text-sm">
-            Agents validate and rate factors for importance
-          </p>
-        </div>
-        <div className="bg-white rounded-lg p-6 shadow">
-          <div className="text-3xl mb-2">📊</div>
-          <h3 className="font-bold text-lg mb-2">Deep Research</h3>
-          <p className="text-gray-600 text-sm">
-            Agents research historical patterns and current data
-          </p>
+          <div
+            className="bg-white text-[#0f172a] rounded-xl border-4 border-[#2d3748] shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-8"
+            style={{
+              backgroundImage: `
+                linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 40%),
+                linear-gradient(90deg, rgba(248,249,251,0.96) 0%, rgba(242,245,249,0.96) 100%),
+                repeating-linear-gradient(0deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 4px, rgba(0,0,0,0.02) 4px, rgba(0,0,0,0.02) 8px)
+              `,
+            }}
+          >
+            <QuestionInput onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+          </div>
         </div>
       </div>
     </div>

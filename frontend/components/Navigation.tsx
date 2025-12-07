@@ -16,7 +16,7 @@ export function Navigation() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-[#1a1f2e] border-b-4 border-[#2d3748] shadow-[0_4px_12px_rgba(0,0,0,0.45)]">
-      <div className="max-w-7xl mx-auto px-4">
+      <div className="w-full px-4 sm:px-6">
         <div className="flex items-center gap-8">
           {tabs.map((tab) => {
             const isActive = tab.href === "/" 

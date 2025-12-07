@@ -36,9 +36,9 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 text-[#0f172a]">
       <div>
-        <label htmlFor="question" className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="question" className="block text-sm font-medium text-slate-700 mb-2">
           Forecasting Question
         </label>
         <textarea
@@ -46,7 +46,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
           value={questionText}
           onChange={(e) => setQuestionText(e.target.value)}
           placeholder="e.g., Will Bitcoin reach $150,000 by December 31, 2025?"
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+          className="w-full px-4 py-3 rounded-lg bg-white border border-[#d9dde7] text-[#0f172a] placeholder:text-slate-500 focus:ring-2 focus:ring-[#2d7dd2]/70 focus:border-[#2d7dd2]/70 shadow-[0_6px_20px_rgba(0,0,0,0.08)] resize-none transition"
           rows={4}
           required
           disabled={isSubmitting}
@@ -55,14 +55,14 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="type" className="block text-sm font-medium text-slate-700 mb-2">
             Question Type
           </label>
           <select
             id="type"
             value={questionType}
             onChange={(e) => setQuestionType(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="w-full px-4 py-3 rounded-lg bg-white border border-[#d9dde7] text-[#0f172a] focus:ring-2 focus:ring-[#2d7dd2]/70 focus:border-[#2d7dd2]/70 transition shadow-[0_6px_20px_rgba(0,0,0,0.06)]"
             disabled={isSubmitting}
           >
             <option value="binary">Binary (Yes/No)</option>
@@ -72,14 +72,14 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         </div>
         
         <div>
-          <label htmlFor="forecasterClass" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="forecasterClass" className="block text-sm font-medium text-slate-700 mb-2">
             Forecaster Class
           </label>
           <select
             id="forecasterClass"
             value={forecasterClass}
             onChange={(e) => setForecasterClass(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="w-full px-4 py-3 rounded-lg bg-white border border-[#d9dde7] text-[#0f172a] focus:ring-2 focus:ring-[#2d7dd2]/70 focus:border-[#2d7dd2]/70 transition shadow-[0_6px_20px_rgba(0,0,0,0.06)]"
             disabled={isSubmitting}
           >
             <option value="balanced">Balanced (Default)</option>
@@ -95,33 +95,33 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+          className="text-sm text-[#2d7dd2] hover:text-[#1f5fa0] font-medium"
           disabled={isSubmitting}
         >
           {showAdvanced ? "▼" : "▶"} Advanced: Agent Configuration
         </button>
         
         {showAdvanced && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
+          <div className="mt-4 p-4 bg-white/90 border border-[#d9dde7] rounded-lg space-y-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
             {forecasterClass !== "balanced" ? (
-              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800 font-medium mb-1">
+              <div className="mb-3 p-3 bg-[#eef2f7] border border-[#c6d3e6] rounded-md">
+                <p className="text-sm text-[#1f5fa0] font-medium mb-1">
                   ⓘ Agent Configuration Disabled
                 </p>
-                <p className="text-xs text-blue-700">
+                <p className="text-xs text-slate-700">
                   The "{forecasterClass}" forecaster class uses its own optimized agent counts. 
                   Switch to "Balanced" to customize agent counts.
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-gray-600 mb-3">
+              <p className="text-sm text-slate-700 mb-3">
                 Configure how many agents run in each phase (default: 10, 2, 10, 1 = 23 total)
               </p>
             )}
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="phase1" className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor="phase1" className="block text-xs font-medium text-slate-700 mb-1">
                   Phase 1: Discovery
                 </label>
                 <input
@@ -131,13 +131,13 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                   max="20"
                   value={agentCounts.phase_1_discovery}
                   onChange={(e) => setAgentCounts({...agentCounts, phase_1_discovery: parseInt(e.target.value) || 10})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="w-full px-3 py-2 rounded-md text-sm bg-white border border-[#d9dde7] text-[#0f172a] focus:ring-2 focus:ring-[#2d7dd2]/70 focus:border-[#2d7dd2]/70 transition shadow-[0_4px_12px_rgba(0,0,0,0.06)]"
                   disabled={isSubmitting || forecasterClass !== "balanced"}
                 />
               </div>
               
               <div>
-                <label htmlFor="phase2" className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor="phase2" className="block text-xs font-medium text-slate-700 mb-1">
                   Phase 2: Validation
                 </label>
                 <input
@@ -147,14 +147,14 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                   max="2"
                   value={agentCounts.phase_2_validation}
                   onChange={(e) => setAgentCounts({...agentCounts, phase_2_validation: 2})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-100"
+                  className="w-full px-3 py-2 rounded-md text-sm bg-[#eef2f7] border border-[#d9dde7] text-slate-600"
                   disabled={true}
                   title="Always 2 agents (validator, rating_consensus merged)"
                 />
               </div>
               
               <div>
-                <label htmlFor="phase3" className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor="phase3" className="block text-xs font-medium text-slate-700 mb-1">
                   Phase 3: Research
                 </label>
                 <input
@@ -164,14 +164,14 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                   max="20"
                   value={agentCounts.phase_3_research}
                   onChange={(e) => setAgentCounts({...agentCounts, phase_3_research: parseInt(e.target.value) || 10})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="w-full px-3 py-2 rounded-md text-sm bg-white border border-[#d9dde7] text-[#0f172a] focus:ring-2 focus:ring-[#2d7dd2]/70 focus:border-[#2d7dd2]/70 transition shadow-[0_4px_12px_rgba(0,0,0,0.06)]"
                   disabled={isSubmitting || forecasterClass !== "balanced"}
                 />
-                <p className="text-xs text-gray-500 mt-1">Split: half historical, half current</p>
+                <p className="text-xs text-slate-600 mt-1">Split: half historical, half current</p>
               </div>
               
               <div>
-                <label htmlFor="phase4" className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor="phase4" className="block text-xs font-medium text-slate-700 mb-1">
                   Phase 4: Synthesis
                 </label>
                 <input
@@ -181,7 +181,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                   max="1"
                   value={agentCounts.phase_4_synthesis}
                   onChange={(e) => setAgentCounts({...agentCounts, phase_4_synthesis: 1})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-100"
+                  className="w-full px-3 py-2 rounded-md text-sm bg-[#eef2f7] border border-[#d9dde7] text-slate-600"
                   disabled={true}
                   title="Always 1 agent"
                 />
@@ -190,7 +190,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
             
             {forecasterClass === "balanced" && (
               <div className="pt-2 border-t border-gray-200">
-                <p className="text-xs text-gray-600">
+                <p className="text-xs text-slate-600">
                   Total agents: {(agentCounts.phase_1_discovery || 0) + (agentCounts.phase_2_validation || 0) + (agentCounts.phase_3_research || 0) + (agentCounts.phase_4_synthesis || 0)}
                 </p>
               </div>
@@ -202,7 +202,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
       <button
         type="submit"
         disabled={isSubmitting || !questionText.trim()}
-        className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+        className="w-full bg-[#2d7dd2] text-white py-3 px-6 rounded-lg font-semibold hover:bg-[#2568ad] disabled:bg-slate-400 disabled:text-white/80 disabled:cursor-not-allowed transition-colors shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
       >
         {isSubmitting ? "Creating Forecast..." : "Start Forecasting"}
       </button>
