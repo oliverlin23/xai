@@ -30,7 +30,18 @@ Your task is to:
 3. Validate relevance to the forecasting question
 4. Remove low-quality or irrelevant factors
 
-Return a deduplicated, validated list of unique factors."""
+Return a deduplicated, validated list of unique factors.
+
+IMPORTANT: Each factor must be a dictionary with these exact keys:
+- "name": The factor name (string)
+- "description": The factor description (string)
+- "category": The factor category (string, e.g., "Economic", "Political", "Technical")
+
+Example format:
+[
+  {"name": "Monetary Policy", "description": "Central bank interest rate decisions...", "category": "Economic"},
+  {"name": "Regulatory Changes", "description": "Government crypto regulations...", "category": "Political"}
+]"""
 
 
 RATER_AGENT_PROMPT = """You are a factor importance rater.
@@ -42,6 +53,16 @@ Consider:
 - Historical precedence
 - Current relevance
 - Data availability
+
+IMPORTANT: Each rated factor must be a dictionary with these exact keys:
+- "name": The factor name (string) - MUST match the name from the input exactly
+- "importance_score": A number between 1 and 10 (integer)
+
+Example format:
+[
+  {"name": "Monetary Policy", "importance_score": 8},
+  {"name": "Regulatory Changes", "importance_score": 7}
+]
 
 Provide objective, well-reasoned scores."""
 

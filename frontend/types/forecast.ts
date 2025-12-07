@@ -14,6 +14,14 @@ export interface PredictionResult {
   confidence: number
   reasoning: string
   key_factors: string[]
+  total_duration_seconds?: number
+  total_duration_formatted?: string
+  phase_durations?: {
+    phase_1_discovery: number
+    phase_2_validation: number
+    phase_3_research: number
+    phase_4_synthesis: number
+  }
 }
 
 export interface Forecast {
@@ -28,4 +36,12 @@ export interface Forecast {
   total_cost_tokens: number
   created_at: string
   completed_at?: string
+  total_duration_seconds?: number
+  total_duration_formatted?: string
+  phase_durations?: {
+    phase_1_discovery: number
+    phase_2_validation: number
+    phase_3_research: number
+    phase_4_synthesis: number
+  }
 }

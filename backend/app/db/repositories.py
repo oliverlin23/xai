@@ -6,7 +6,10 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from app.db.client import get_db_client
 from app.db.queries import QueryBuilder
+from app.core.logging_config import get_logger
 import uuid
+
+logger = get_logger(__name__)
 
 
 class BaseRepository:
@@ -76,6 +79,9 @@ class SessionRepository(BaseRepository):
         Returns:
             Created session record
         """
+        logger.info(f"[DB] SessionRepository.create_session() called")
+        logger.info(f"[DB] Question: {question_text[:50]}...")
+        logger.info(f"[DB] Type: {question_type}")
         data = {
             "question_text": question_text,
             "question_type": question_type,
@@ -84,14 +90,18 @@ class SessionRepository(BaseRepository):
             "started_at": datetime.utcnow().isoformat(),
             "total_cost_tokens": 0,
         }
-        return self.create(data)
+        logger.info(f"[DB] Calling QueryBuilder.create() on 'sessions' table")
+        result = self.create(data)
+        logger.info(f"[DB] Session created with ID: {result.get('id')}")
+        return result
     
     def update_status(
         self,
         session_id: str,
         status: str,
         phase: Optional[str] = None,
-        prediction_result: Optional[Dict[str, Any]] = None
+        prediction_result: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Update session status and optionally phase/prediction
@@ -101,6 +111,7 @@ class SessionRepository(BaseRepository):
             status: New status (running, completed, failed)
             phase: Optional phase name
             prediction_result: Optional prediction result dict
+            error_message: Optional error message if failed
         
         Returns:
             Updated session record
@@ -113,7 +124,10 @@ class SessionRepository(BaseRepository):
         if prediction_result:
             data["prediction_result"] = prediction_result
         
-        if status == "completed":
+        if error_message:
+            data["error_message"] = error_message
+        
+        if status in ["completed", "failed"]:
             data["completed_at"] = datetime.utcnow().isoformat()
         
         return self.update(session_id, data)
@@ -190,6 +204,8 @@ class AgentLogRepository(BaseRepository):
         Returns:
             Created log record
         """
+        logger.info(f"[DB] AgentLogRepository.create_log() called")
+        logger.info(f"[DB] Session: {session_id}, Agent: {agent_name}, Phase: {phase}")
         data = {
             "session_id": session_id,
             "agent_name": agent_name,
@@ -197,7 +213,10 @@ class AgentLogRepository(BaseRepository):
             "status": status,
             "tokens_used": 0,
         }
-        return self.create(data)
+        logger.info(f"[DB] Calling QueryBuilder.create() on 'agent_logs' table")
+        result = self.create(data)
+        logger.info(f"[DB] Agent log created with ID: {result.get('id')}")
+        return result
     
     def update_log(
         self,
@@ -348,11 +367,19 @@ class FactorRepository(BaseRepository):
         """
         filters = {"session_id": session_id}
         
-        order_by = "importance_score" if order_by_importance else "created_at"
-        
-        return self.find_all(
-            filters=filters,
-            order_by=order_by,
-            order_desc=order_by_importance
-        )
+        if order_by_importance:
+            # Get all factors first, then sort in Python to handle None values properly
+            factors = self.find_all(filters=filters)
+            # Sort by importance_score, putting None values last
+            factors.sort(
+                key=lambda f: (f.get("importance_score") is None, f.get("importance_score") or 0),
+                reverse=True
+            )
+            return factors
+        else:
+            return self.find_all(
+                filters=filters,
+                order_by="created_at",
+                order_desc=True
+            )
 
