@@ -1,2 +1,19 @@
+# ===================
+# Backend (Python/FastAPI)
+# ===================
+
+# Grok API
 GROK_API_KEY="your-grok-api-key"
-X_API_KEY="your-x-api-key"
+
+# X API (for tweet lookup)
+X_API_BEARER_TOKEN="your-x-api-bearer-token"
+
+# Supabase
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_SERVICE_KEY="your-supabase-service-key"
+
+# ===================
+# Frontend (Next.js)
+# ===================
+
+NEXT_PUBLIC_API_URL="http://localhost:8000"

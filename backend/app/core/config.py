@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Grok API
     grok_api_key: str
 
+    # X API (for tweet lookup)
+    x_api_bearer_token: str = ""
+
     # Supabase
     supabase_url: str
     supabase_service_key: str
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
     grok_rate_limit_retry_attempts: int = 5  # Max retries for rate limits
 
     class Config:
-        env_file = ".env"
+        env_file = "../.env"  # Read from project root
         case_sensitive = False
         extra = "ignore"  # Ignore extra env vars
 

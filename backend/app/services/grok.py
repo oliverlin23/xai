@@ -106,7 +106,9 @@ class GrokService:
         user_message: str,
         output_schema: Optional[type[BaseModel]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 4000
+        max_tokens: int = 4000,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Send chat completion request to Grok API with rate limit handling
@@ -117,6 +119,8 @@ class GrokService:
             output_schema: Pydantic model for structured output (optional)
             temperature: Sampling temperature
             max_tokens: Maximum tokens in response
+            tools: List of tool definitions for function calling (MCP tools)
+            tool_choice: Tool choice mode ("auto", "none", or {"type": "function", "function": {"name": "tool_name"}})
 
         Returns:
             Dict with 'content', 'prompt_tokens', 'completion_tokens', 'total_tokens'
@@ -137,8 +141,90 @@ class GrokService:
             "max_tokens": max_tokens
         }
 
-        # Add structured output if schema provided
-        if output_schema:
+        # Add tools if provided (for MCP/function calling)
+        if tools:
+            kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
+
+        # Add structured output if schema provided (only if no tools)
+        if output_schema and not tools:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": output_schema.__name__,
+                    "schema": output_schema.model_json_schema(),
+                    "strict": True
+                }
+            }
+
+        try:
+            response = await self.client.chat.completions.create(**kwargs)
+            message = response.choices[0].message
+
+            result = {
+                "content": message.content,
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens
+            }
+
+            # Include tool calls if present
+            if message.tool_calls:
+                result["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    }
+                    for tc in message.tool_calls
+                ]
+
+            return result
+        except Exception as e:
+            raise Exception(f"Grok API error: {str(e)}")
+
+    async def chat_completion_with_messages(
+        self,
+        messages: list[Dict[str, Any]],
+        output_schema: Optional[type[BaseModel]] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4000,
+        tools: Optional[list[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Send chat completion with full message history (for multi-turn with tools)
+
+        Args:
+            messages: Full conversation history including system, user, assistant, and tool messages
+            output_schema: Pydantic model for structured output (optional)
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens in response
+            tools: List of tool definitions for function calling
+            tool_choice: Tool choice mode
+
+        Returns:
+            Dict with 'content', 'prompt_tokens', 'completion_tokens', 'tool_calls' (if any)
+        """
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        # Add tools if provided
+        if tools:
+            kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
+
+        # Add structured output if schema provided (only if no tools)
+        if output_schema and not tools:
             kwargs["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
