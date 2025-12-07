@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState, Suspense, useCallback, useRef } from "react"
+import { useEffect, useState, Suspense, useRef } from "react"
 import { useTradingStore } from "@/lib/store"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { api } from "@/lib/api"
 import { useRealtimeTrades, Trade, TraderState } from "@/hooks/useRealtimeTrades"
 import { Press_Start_2P } from "next/font/google"
+import { PriceGraph } from "@/components/trading/PriceGraph"
+import { supabase } from "@/lib/supabase"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
@@ -60,10 +62,12 @@ const ALL_AGENTS = [
 ]
 
 const statusStyles = {
-  idle: { label: "Active", className: "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.45)]" },
+  idle: { label: "Active", className: "bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.45)]" },
   analyzing: { label: "Processing", className: "bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.45)]" },
   "submitting-order": { label: "Submitting", className: "bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.45)]" },
   offline: { label: "Offline", className: "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.45)]" },
+  buy: { label: "Buy", className: "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.45)]" },
+  sell: { label: "Sell", className: "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.45)]" },
 }
 
 const PartitionFrame = () => (
@@ -86,6 +90,7 @@ const Cubicle = ({
   name,
   role,
   status,
+  flashStatus,
   description,
   prediction,
   onClick,
@@ -96,13 +101,16 @@ const Cubicle = ({
   name: string
   role: string
   status: keyof typeof statusStyles
+  flashStatus?: "buy" | "sell" | null
   description?: string
   prediction?: number
   onClick?: () => void
   hasPlant?: boolean
   hasTrash?: boolean
 }) => {
-  const statusMeta = statusStyles[status]
+  // Use flash status if present, otherwise use regular status
+  const displayStatus = flashStatus || status
+  const statusMeta = statusStyles[displayStatus]
 
   return (
     <div className="relative w-[180px] h-[180px]">
@@ -175,11 +183,13 @@ interface AgentInfo {
 }
 
 const OfficeScene = ({ 
-  agents,
-  onAgentClick,
+  forecasterResponses, 
+  onForecasterClick,
+  traderFlashStates
 }: { 
-  agents: AgentInfo[]
-  onAgentClick: (agent: AgentInfo) => void
+  forecasterResponses: ForecasterResponse[]
+  onForecasterClick: (response: ForecasterResponse) => void
+  traderFlashStates: Record<string, "buy" | "sell" | null>
 }) => {
   return (
     <div className="relative w-full h-full flex items-center justify-center p-0">
@@ -195,9 +205,11 @@ const OfficeScene = ({
                   name={agent.name}
                   role={agent.role}
                   status={agent.status}
+                  flashStatus={traderFlashStates[agent.name] || null}
                   description={agent.description}
-                  prediction={agent.prediction}
-                  onClick={() => onAgentClick(agent)}
+                  probability={agent.probability}
+                  confidence={agent.confidence}
+                  onClick={agent.response ? () => agent.response && onForecasterClick(agent.response) : undefined}
                   hasPlant={false}
                   hasTrash={i % 4 === 1}
                 />
@@ -216,9 +228,11 @@ const OfficeScene = ({
                     name={agent.name}
                     role={agent.role}
                     status={agent.status}
+                    flashStatus={traderFlashStates[agent.name] || null}
                     description={agent.description}
-                    prediction={agent.prediction}
-                    onClick={() => onAgentClick(agent)}
+                    probability={agent.probability}
+                    confidence={agent.confidence}
+                    onClick={agent.response ? () => agent.response && onForecasterClick(agent.response) : undefined}
                     hasPlant={false}
                     hasTrash={idx % 4 === 1}
                   />
@@ -399,7 +413,7 @@ const AgentDetailModal = ({
   )
 }
 
-const OrderBookModal = ({
+const PriceGraphModal = ({
   open,
   onClose,
   sessionId,
@@ -433,78 +447,19 @@ const OrderBookModal = ({
   
   if (!open) return null
 
-  const maxAskSize = Math.max(...orderBook.asks.map((a) => a.quantity || 0), 1)
-  const maxBidSize = Math.max(...orderBook.bids.map((b) => b.quantity || 0), 1)
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-      <div className="relative w-full max-w-3xl rounded-xl border-4 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-[0_20px_40px_rgba(0,0,0,0.55)] p-6">
+      <div className="relative w-full max-w-6xl h-[58vh] rounded-xl border-4 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-[0_20px_40px_rgba(0,0,0,0.55)] px-8 py-6">
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 px-3 py-1 bg-red-500 text-white text-xs rounded-md shadow"
+          className="absolute top-3 right-3 px-3 py-1 bg-red-500 text-white text-xs rounded-md shadow hover:bg-red-600 transition-colors z-10"
         >
           Close
         </button>
 
-        <div className="text-center text-2xl mb-4 tracking-[0.15em]">Order Book</div>
+        <div className="text-center text-2xl mb-4 mt-2 tracking-[0.15em]">Market Price</div>
 
-        <div className="space-y-4">
-          <div className="border border-red-400/40 rounded-lg p-4 bg-red-900/25 shadow-inner">
-            <div className="text-red-300 text-lg mb-2 tracking-[0.1em]">Asks</div>
-            <div className="space-y-2">
-              {orderBook.asks.length === 0 ? (
-                <div className="text-center text-red-400/50 text-sm py-2">No asks</div>
-              ) : (
-                orderBook.asks.slice(0, 5).map((ask, idx) => {
-                  const widthPct = Math.max((ask.quantity / maxAskSize) * 100, 6)
-                  return (
-                    <div
-                      key={idx}
-                      className="relative flex items-center text-sm bg-red-900/35 border border-red-500/30 rounded px-3 py-2 overflow-hidden"
-                    >
-                      <div
-                        className="absolute left-0 top-0 h-full bg-red-600/30"
-                        style={{ width: `${widthPct}%` }}
-                      />
-                      <div className="relative flex-1 flex justify-between items-center">
-                        <span className="text-red-200 font-semibold">{ask.price}¢</span>
-                        <span className="text-red-100">{ask.quantity?.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="border border-emerald-400/40 rounded-lg p-4 bg-emerald-900/25 shadow-inner">
-            <div className="text-emerald-300 text-lg mb-2 tracking-[0.1em]">Bids</div>
-            <div className="space-y-2">
-              {orderBook.bids.length === 0 ? (
-                <div className="text-center text-emerald-400/50 text-sm py-2">No bids</div>
-              ) : (
-                orderBook.bids.slice(0, 5).map((bid, idx) => {
-                  const widthPct = Math.max((bid.quantity / maxBidSize) * 100, 6)
-                  return (
-                    <div
-                      key={idx}
-                      className="relative flex items-center text-sm bg-emerald-900/35 border border-emerald-500/30 rounded px-3 py-2 overflow-hidden"
-                    >
-                      <div
-                        className="absolute left-0 top-0 h-full bg-emerald-600/30"
-                        style={{ width: `${widthPct}%` }}
-                      />
-                      <div className="relative flex-1 flex justify-between items-center">
-                        <span className="text-emerald-200 font-semibold">{bid.price}¢</span>
-                        <span className="text-emerald-100">{bid.quantity?.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
-        </div>
+        <PriceGraph sessionId={sessionId} />
       </div>
     </div>
   )
@@ -519,13 +474,11 @@ function OfficePageContent() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [questionText, setQuestionText] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [isRunning, setIsRunning] = useState(false)
-  const [simulationPhase, setSimulationPhase] = useState<"initializing" | "running" | "stopped">("stopped")
-  const [roundNumber, setRoundNumber] = useState(0)
-  const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null)
-  
-  // Real-time data
-  const realtimeData = useRealtimeTrades(sessionId || "")
+  const [forecasterResponses, setForecasterResponses] = useState<ForecasterResponse[]>([])
+  const [selectedForecaster, setSelectedForecaster] = useState<ForecasterResponse | null>(null)
+  const [traderFlashStates, setTraderFlashStates] = useState<Record<string, "buy" | "sell" | null>>({})
+  const processingRef = useRef<string | null>(null) // Track which query is currently being processed
+  const lastProcessedQueryRef = useRef<string | null>(null) // Track last successfully processed query
 
   useEffect(() => {
     initializeDemoAgents(18)
@@ -572,37 +525,299 @@ function OfficePageContent() {
     } else if (simulationPhase === "initializing") {
       status = "analyzing"  // Yellow - processing
     } else {
-      // Running phase
-      status = traderState ? "idle" : "offline"
+      setForecasterResponses([])
+    }
+  }, [forecast?.id, forecast?.forecaster_responses])
+
+  // Subscribe to real-time forecaster_responses updates to show progress
+  useEffect(() => {
+    if (!forecast?.id) return
+
+    const channel = supabase
+      .channel(`forecaster_responses:${forecast.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Listen to INSERT, UPDATE, DELETE
+          schema: "public",
+          table: "forecaster_responses",
+          filter: `session_id=eq.${forecast.id}`,
+        },
+        async (payload) => {
+          // Fetch updated forecast data when forecaster responses change
+          try {
+            const forecastData = await api.forecasts.get(forecast.id) as Forecast
+            if (forecastData.forecaster_responses) {
+              setForecasterResponses(forecastData.forecaster_responses)
+              setForecast(forecastData)
+            }
+          } catch (error) {
+            console.error("Error fetching updated forecaster responses:", error)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [forecast?.id])
+
+  // Subscribe to real-time orderbook changes to flash trader status dots
+  useEffect(() => {
+    if (!forecast?.id) return
+
+    const channel = supabase
+      .channel(`trader_flash:${forecast.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "orderbook_live",
+          filter: `session_id=eq.${forecast.id}`,
+        },
+        (payload) => {
+          const newOrder = payload.new as { trader_name: string; side: "buy" | "sell" }
+          const traderName = newOrder.trader_name
+          const side = newOrder.side
+
+          // Flash the trader's status dot
+          setTraderFlashStates((prev) => ({
+            ...prev,
+            [traderName]: side,
+          }))
+
+          // Clear the flash after 2 seconds
+          setTimeout(() => {
+            setTraderFlashStates((prev) => {
+              const updated = { ...prev }
+              if (updated[traderName] === side) {
+                updated[traderName] = null
+              }
+              return updated
+            })
+          }, 2000)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [forecast?.id])
+
+  // Cleanup: Mark session as completed when component unmounts or page closes
+  useEffect(() => {
+    if (!forecast?.id) return
+
+    const markSessionCompleted = async () => {
+      try {
+        await api.sessions.complete(forecast.id)
+      } catch (error) {
+        console.error("Error marking session as completed:", error)
+      }
+    }
+
+    // Mark as completed when component unmounts (user navigates away)
+    const handleBeforeUnload = () => {
+      // Use sendBeacon with GET request for reliable delivery even if page is closing
+      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/sessions/${forecast.id}/complete`
+      navigator.sendBeacon(url)
+    }
+
+    // Handle page visibility change (tab switch, minimize, etc.)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // Page is being hidden, mark session as completed
+        markSessionCompleted()
+      }
+    }
+
+    // Add event listeners
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    // Return cleanup function for component unmount
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      // Mark as completed on unmount
+      markSessionCompleted()
+    }
+  }, [forecast?.id])
+
+  const processForecast = async (queryText: string) => {
+    // Normalize query text for comparison
+    const normalizedQuery = queryText.trim().toLowerCase()
+    
+    // Prevent duplicate processing of the same query
+    if (processingRef.current === normalizedQuery) {
+      console.log("Already processing this query, skipping duplicate call")
+      return
     }
     
-    return {
-      ...agentConfig,
-      status,
-      prediction: undefined, // Could extract from system_prompt if stored
-      traderState,
+    // If we already processed this exact query, don't process again
+    if (lastProcessedQueryRef.current === normalizedQuery && forecast?.id) {
+      console.log("Query already processed, using existing forecast")
+      return
     }
-  })
-
-  // Start simulation
-  const startSimulation = useCallback(async (queryText: string) => {
+    
+    // Mark as processing
+    processingRef.current = normalizedQuery
+    
     setIsLoading(true)
-    setQuestionText(queryText)
+    setForecast(null)
+    setForecasterResponses([])
 
     try {
-      const result = await api.sessions.run({
-        question_text: queryText.trim(),
-        question_type: "binary",
-        resolution_criteria: "Standard YES/NO resolution based on outcome occurrence.",
-        resolution_date: "2025-12-31",
-        trading_interval_seconds: 10,
-      })
+      // Check if forecast exists in database (any status, not just completed)
+      const existingForecasts = await api.forecasts.list(10, 0, queryText.trim()) as { forecasts: Forecast[], total: number }
+      let forecastId: string | null = null
+      let existingForecast: Forecast | null = null
 
-      setSessionId(result.session_id)
-      setIsRunning(true)
-      setIsLoading(false)
+      if (existingForecasts.forecasts && existingForecasts.forecasts.length > 0) {
+        // Find any forecast with matching question (prefer most recent)
+        const matching = existingForecasts.forecasts
+          .filter((f) => f.question_text.trim().toLowerCase() === queryText.trim().toLowerCase())
+          .sort((a, b) => {
+            // Sort by created_at descending (most recent first)
+            const aDate = new Date(a.created_at).getTime()
+            const bDate = new Date(b.created_at).getTime()
+            return bDate - aDate
+          })
+        
+        if (matching.length > 0) {
+          existingForecast = matching[0]
+          forecastId = existingForecast.id
+        }
+      }
+
+      // If no existing forecast found, create a new one
+      if (!forecastId) {
+        const newForecast = await api.forecasts.create({
+          question_text: queryText.trim(),
+          question_type: "binary",
+          run_all_forecasters: true, // Run all 5 forecaster personalities for Cassandra
+          agent_counts: {
+            phase_1_discovery: 2,
+            phase_2_validation: 2,
+            phase_3_research: 2, // Backward compatible - will split 50/50 into historical/current
+            phase_4_synthesis: 1,
+          },
+        }) as Forecast
+        forecastId = newForecast.id
+
+        // Poll for updates - update UI continuously to show progress
+        const pollInterval = setInterval(async () => {
+          try {
+            const forecastData = await api.forecasts.get(forecastId!) as Forecast
+            const responses = forecastData.forecaster_responses || []
+            
+            // Always update the UI with latest data (not just when completed)
+            setForecast(forecastData)
+            setForecasterResponses(responses)
+            setIsLoading(false)
+            
+            // Check if all forecasters are completed (or at least one failed)
+            const allCompleted = responses.length >= 5 && responses.every(r => 
+              r.status === "completed" || r.status === "failed"
+            )
+            
+            if (allCompleted || forecastData.status === "failed") {
+              clearInterval(pollInterval)
+              // Don't show result overlay - show office with forecasters instead
+            }
+          } catch (error) {
+            console.error("Error polling forecast:", error)
+            clearInterval(pollInterval)
+            setIsLoading(false)
+          }
+        }, 2000) // Poll every 2 seconds
+
+        // Timeout after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          if (isLoading) {
+            setIsLoading(false)
+            alert("Forecast is taking longer than expected. Please check back later.")
+          }
+        }, 300000)
+        
+        // Mark as processed
+        lastProcessedQueryRef.current = normalizedQuery
+        processingRef.current = null
+      } else {
+        // Use existing forecast - resume session
+        const forecastData = await api.forecasts.get(forecastId) as Forecast
+        setForecast(forecastData)
+        if (forecastData.forecaster_responses) {
+          setForecasterResponses(forecastData.forecaster_responses)
+          
+          // Check if all forecasters are completed
+          const allCompleted = forecastData.forecaster_responses.length >= 5 && 
+            forecastData.forecaster_responses.every(r => 
+              r.status === "completed" || r.status === "failed"
+            )
+          
+          // If forecasters are completed, automatically start/resume trading
+          if (allCompleted && forecastId) {
+            try {
+              await api.sessions.startTrading(forecastId, 30, false)
+              console.log("Trading resumed for existing session")
+            } catch (error) {
+              console.error("Error resuming trading:", error)
+            }
+          } else if (forecastId) {
+            // Forecasters still running, wait for them to complete
+            // Poll for completion and then start trading - update UI continuously
+            const pollInterval = setInterval(async () => {
+              try {
+                const updatedForecast = await api.forecasts.get(forecastId!) as Forecast
+                const responses = updatedForecast.forecaster_responses || []
+                
+                // Always update the UI with latest data (not just when completed)
+                setForecast(updatedForecast)
+                setForecasterResponses(responses)
+                
+                const allCompleted = responses.length >= 5 && responses.every(r => 
+                  r.status === "completed" || r.status === "failed"
+                )
+                
+                if (allCompleted) {
+                  clearInterval(pollInterval)
+                  
+                  // Start trading now that forecasters are done
+                  if (forecastId) {
+                    try {
+                      await api.sessions.startTrading(forecastId, 30, false)
+                      console.log("Trading started after forecasters completed")
+                    } catch (error) {
+                      console.error("Error starting trading:", error)
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error("Error polling forecast:", error)
+                clearInterval(pollInterval)
+              }
+            }, 2000)
+            
+            // Timeout after 5 minutes
+            setTimeout(() => {
+              clearInterval(pollInterval)
+            }, 300000)
+          }
+        }
+        
+        // Mark as processed
+        lastProcessedQueryRef.current = normalizedQuery
+        processingRef.current = null
+        setIsLoading(false)
+      }
     } catch (error) {
-      console.error("Error starting simulation:", error)
+      console.error("Error processing forecast:", error)
+      processingRef.current = null // Clear processing flag on error
       setIsLoading(false)
       alert("Failed to start simulation. Please try again.")
     }
@@ -626,9 +841,12 @@ function OfficePageContent() {
   // Handle query param
   useEffect(() => {
     const query = searchParams.get("q")
-    if (query && !sessionId && !hasStartedRef.current) {
-      hasStartedRef.current = true
-      startSimulation(query)
+    if (query) {
+      const normalizedQuery = query.trim().toLowerCase()
+      // Only process if this is a different query than what we last processed
+      if (lastProcessedQueryRef.current !== normalizedQuery) {
+        processForecast(query)
+      }
     }
   }, [searchParams, sessionId, startSimulation])
 
@@ -669,8 +887,9 @@ function OfficePageContent() {
       {/* Main Scene */}
       <div className="relative z-10 w-full h-full">
         <OfficeScene 
-          agents={agents}
-          onAgentClick={(agent) => setSelectedAgent(agent)}
+          forecasterResponses={forecasterResponses}
+          onForecasterClick={(response) => setSelectedForecaster(response)}
+          traderFlashStates={traderFlashStates}
         />
 
         {/* Central desk / terminal in the aisle */}
@@ -678,7 +897,7 @@ function OfficePageContent() {
           <button
             onClick={() => setOrderBookOpen(true)}
             className="relative group p-4 rounded-lg bg-transparent pointer-events-auto"
-            aria-label="Open order book terminal"
+            aria-label="Open market price graph"
           >
             <img
               src="/sprites/desk-with-pc.png"
@@ -686,13 +905,17 @@ function OfficePageContent() {
               className="w-24 h-24 object-contain pixelated drop-shadow-[0_10px_15px_rgba(0,0,0,0.45)] transition-transform duration-150 group-hover:-translate-y-1"
             />
             <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-10 px-3 py-1 rounded-md bg-slate-900/90 text-[11px] text-slate-100 border border-white/10 shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap">
-              View Order Book
+              View Market Price
             </div>
           </button>
         </div>
       </div>
 
-      <OrderBookModal open={orderBookOpen} onClose={() => setOrderBookOpen(false)} sessionId={sessionId} />
+      <PriceGraphModal 
+        open={orderBookOpen} 
+        onClose={() => setOrderBookOpen(false)} 
+        sessionId={forecast?.id || null}
+      />
 
       {/* Loading overlay */}
       {isLoading && (
