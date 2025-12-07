@@ -58,7 +58,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
 
     const fetchInitialData = async () => {
       try {
-        // Fetch recent trades
         const { data: trades, error: tradesError } = await supabase
           .from("trades")
           .select("price, created_at")
@@ -85,7 +84,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           }
         }
 
-        // Fetch current orderbook to get best bid/ask
         const { data: bids } = await supabase
           .from("orderbook_live")
           .select("price")
@@ -114,7 +112,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           setBestAsk(askData[0].price)
         }
 
-        // Calculate midpoint if we have both bid and ask
         if (bidData && bidData.length > 0 && askData && askData.length > 0) {
           const midpoint = Math.round((bidData[0].price + askData[0].price) / 2)
           if (!currentPrice) {
@@ -122,7 +119,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           }
         }
 
-        // Fetch trader positions
         const { data: positions } = await supabase
           .from("trader_state_live")
           .select("name, trader_type, position, cash, pnl")
@@ -133,7 +129,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           setTraderPositions(positions as TraderPosition[])
         }
 
-        // Fetch recent orders
         const { data: orders } = await supabase
           .from("orderbook_live")
           .select("id, trader_name, side, price, quantity, filled_quantity, status, created_at")
@@ -145,7 +140,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           setRecentOrders(orders as RecentOrder[])
         }
 
-        // Fetch recent trades list
         const { data: recentTradesData } = await supabase
           .from("trades")
           .select("id, buyer_name, seller_name, price, quantity, created_at")
@@ -192,7 +186,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                 timestamp: tradeTime.getTime(),
               },
             ]
-            // Keep only last 100 points
             return updated.slice(-100)
           })
 
@@ -247,13 +240,11 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
         setBestAsk(null)
       }
 
-      // Update current price to midpoint if no trades yet
       if (bidData && bidData.length > 0 && askData && askData.length > 0 && !currentPrice) {
         const midpoint = Math.round((bidData[0].price + askData[0].price) / 2)
         setCurrentPrice(midpoint)
       }
 
-      // Update recent orders
       const { data: orders } = await supabase
         .from("orderbook_live")
         .select("id, trader_name, side, price, quantity, filled_quantity, status, created_at")
@@ -276,13 +267,10 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           table: "orderbook_live",
           filter: `session_id=eq.${sessionId}`,
         },
-        () => {
-          updateOrderbook()
-        }
+        () => updateOrderbook()
       )
       .subscribe()
 
-    // Subscribe to trader state updates
     const traderChannel = supabase
       .channel(`trader_state:${sessionId}`)
       .on(
@@ -299,7 +287,7 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
             .select("name, trader_type, position, cash, pnl")
             .eq("session_id", sessionId)
             .order("position", { ascending: false })
-          
+
           if (positions) {
             setTraderPositions(positions as TraderPosition[])
           }
@@ -307,10 +295,7 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
       )
       .subscribe()
 
-    // Initial update
     updateOrderbook()
-
-    // Poll every 2 seconds as backup
     const interval = setInterval(updateOrderbook, 2000)
 
     return () => {
@@ -330,31 +315,28 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
   }, [currentPrice, bestBid, bestAsk])
 
   const priceColor = priceChange >= 0 ? "text-emerald-400" : "text-red-400"
-  const bgColor = priceChange >= 0 ? "bg-emerald-500/20" : "bg-red-500/20"
 
   // Generate mock data when no session
   const mockData: PriceDataPoint[] = useMemo(() => {
     if (sessionId) return []
-    
+
     const now = Date.now()
-    const basePrice = 45 // Start at 45 cents
+    const basePrice = 45
     const data: PriceDataPoint[] = []
-    
-    // Generate 50 data points over the last 5 minutes
+
     for (let i = 50; i >= 0; i--) {
-      const timestamp = now - (i * 6000) // 6 seconds apart
+      const timestamp = now - i * 6000
       const time = new Date(timestamp)
-      // Random walk price movement
-      const priceChange = (Math.random() - 0.5) * 2 // -1 to +1
+      const priceChange = (Math.random() - 0.5) * 2
       const price = Math.max(20, Math.min(80, basePrice + priceChange * i * 0.1))
-      
+
       data.push({
         time: time.toLocaleTimeString(),
         price: Math.round(price),
         timestamp,
       })
     }
-    
+
     return data
   }, [sessionId])
 
@@ -366,16 +348,15 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
       setPriceChange(mockData[mockData.length - 1].price - mockData[0].price)
       setBestBid(mockData[mockData.length - 1].price - 2)
       setBestAsk(mockData[mockData.length - 1].price + 2)
-      
-      // Animate mock data updates
+
       const interval = setInterval(() => {
         setPriceHistory((prev) => {
           if (prev.length === 0) return prev
           const lastPrice = prev[prev.length - 1].price
-          const priceChange = (Math.random() - 0.5) * 2 // -1 to +1
+          const priceChange = (Math.random() - 0.5) * 2
           const newPrice = Math.max(20, Math.min(80, lastPrice + priceChange))
           const newTime = new Date()
-          
+
           const updated = [
             ...prev,
             {
@@ -384,17 +365,16 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
               timestamp: newTime.getTime(),
             },
           ]
-          
+
           setCurrentPrice(Math.round(newPrice))
           setPriceChange(Math.round(newPrice) - prev[0].price)
           setBestBid(Math.round(newPrice) - 2)
           setBestAsk(Math.round(newPrice) + 2)
-          
-          // Keep only last 100 points
+
           return updated.slice(-100)
         })
-      }, 3000) // Update every 3 seconds
-      
+      }, 3000)
+
       return () => clearInterval(interval)
     }
   }, [sessionId, mockData])
@@ -407,12 +387,11 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
         <div className="flex items-baseline gap-3">
           {displayPrice !== null ? (
             <>
-              <span className={`text-4xl font-bold ${priceColor}`}>
-                {displayPrice}¢
-              </span>
+              <span className={`text-4xl font-bold ${priceColor}`}>{displayPrice}¢</span>
               {priceChange !== 0 && (
                 <span className={`text-lg ${priceColor}`}>
-                  {priceChange > 0 ? "+" : ""}{priceChange}¢
+                  {priceChange > 0 ? "+" : ""}
+                  {priceChange}¢
                 </span>
               )}
             </>
@@ -429,15 +408,11 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
 
       {/* Price Chart */}
       <div className="h-48 min-h-[180px]">
-        {(priceHistory.length > 0 || (!sessionId && mockData.length > 0)) ? (
+        {priceHistory.length > 0 || (!sessionId && mockData.length > 0) ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={sessionId ? priceHistory : (priceHistory.length > 0 ? priceHistory : mockData)}>
+            <LineChart data={sessionId ? priceHistory : priceHistory.length > 0 ? priceHistory : mockData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis
-                dataKey="time"
-                stroke="#9ca3af"
-                tick={{ fill: "#9ca3af", fontSize: 12 }}
-              />
+              <XAxis dataKey="time" stroke="#9ca3af" tick={{ fill: "#9ca3af", fontSize: 12 }} />
               <YAxis
                 domain={["dataMin - 2", "dataMax + 2"]}
                 stroke="#9ca3af"
@@ -494,7 +469,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
 
       {/* Bottom Panels: Contracts (left) and Orders/Trades (right) */}
       <div className="grid grid-cols-2 gap-4 mt-3 h-86 mb-0">
-        {/* Left: Contracts (Trader Positions) */}
         <div className="border border-[#2d3748] rounded-lg px-4 pt-4 pb-2 bg-[#0f172a]/50 overflow-hidden flex flex-col">
           <div className="text-sm font-semibold mb-3 text-gray-300">Contracts (Positions)</div>
           <div className="flex-1 overflow-y-auto space-y-2">
@@ -511,10 +485,12 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                     </div>
                     <div className="flex flex-col items-end">
                       <span className={trader.position >= 0 ? "text-emerald-400" : "text-red-400"}>
-                        {trader.position > 0 ? "+" : ""}{trader.position}
+                        {trader.position > 0 ? "+" : ""}
+                        {trader.position}
                       </span>
                       <span className="text-gray-500 text-[10px]">
-                        ${trader.cash.toFixed(2)} | {trader.pnl >= 0 ? "+" : ""}${trader.pnl.toFixed(2)}
+                        ${trader.cash.toFixed(2)} | {trader.pnl >= 0 ? "+" : ""}
+                        {trader.pnl.toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -535,10 +511,12 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                     </div>
                     <div className="flex flex-col items-end">
                       <span className={idx % 2 === 0 ? "text-emerald-400" : "text-red-400"}>
-                        {idx % 2 === 0 ? "+" : ""}{Math.floor(Math.random() * 200) - 100}
+                        {idx % 2 === 0 ? "+" : ""}
+                        {Math.floor(Math.random() * 200) - 100}
                       </span>
                       <span className="text-gray-500 text-[10px]">
-                        ${(1000 + (Math.random() * 200 - 100)).toFixed(2)} | {idx % 2 === 0 ? "+" : ""}${(Math.random() * 50).toFixed(2)}
+                        ${(1000 + (Math.random() * 200 - 100)).toFixed(2)} | {idx % 2 === 0 ? "+" : ""}
+                        {(Math.random() * 50).toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -548,13 +526,11 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           </div>
         </div>
 
-        {/* Right: Orders & Trades */}
         <div className="border border-[#2d3748] rounded-lg px-4 pt-4 pb-2 bg-[#0f172a]/50 overflow-hidden flex flex-col">
           <div className="text-sm font-semibold mb-3 text-gray-300">Recent Orders & Trades</div>
           <div className="flex-1 overflow-y-auto space-y-2">
             {sessionId ? (
               <>
-                {/* Recent Trades */}
                 {recentTrades.slice(0, 5).map((trade, idx) => (
                   <div
                     key={trade.id || idx}
@@ -572,7 +548,6 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                     </div>
                   </div>
                 ))}
-                {/* Recent Orders */}
                 {recentOrders.slice(0, 5).map((order, idx) => (
                   <div
                     key={order.id || idx}
@@ -583,7 +558,11 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className={`font-semibold ${order.side === "buy" ? "text-emerald-300" : "text-red-300"}`}>
+                      <span
+                        className={`font-semibold ${
+                          order.side === "buy" ? "text-emerald-300" : "text-red-300"
+                        }`}
+                      >
                         {order.trader_name} {order.side === "buy" ? "BUY" : "SELL"}
                       </span>
                       <span className={order.side === "buy" ? "text-emerald-200" : "text-red-200"}>
@@ -614,7 +593,9 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className={`font-semibold ${idx % 2 === 0 ? "text-emerald-300" : "text-red-300"}`}>
+                      <span
+                        className={`font-semibold ${idx % 2 === 0 ? "text-emerald-300" : "text-red-300"}`}
+                      >
                         {idx % 2 === 0 ? "conservative BUY" : "momentum SELL"}
                       </span>
                       <span className={idx % 2 === 0 ? "text-emerald-200" : "text-red-200"}>

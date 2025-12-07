@@ -8,7 +8,6 @@ import { api } from "@/lib/api"
 import { useRealtimeTrades, Trade, TraderState } from "@/hooks/useRealtimeTrades"
 import { Press_Start_2P } from "next/font/google"
 import { PriceGraph } from "@/components/trading/PriceGraph"
-import { supabase } from "@/lib/supabase"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
@@ -422,34 +421,11 @@ const PriceGraphModal = ({
   onClose: () => void
   sessionId: string | null
 }) => {
-  const [orderBook, setOrderBook] = useState<{ bids: any[], asks: any[] }>({ bids: [], asks: [] })
-  
-  useEffect(() => {
-    if (!open || !sessionId) return
-    
-    // Fetch orderbook from API
-    const fetchOrderBook = async () => {
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/sessions/${sessionId}/orderbook`)
-        if (response.ok) {
-          const data = await response.json()
-          setOrderBook(data)
-        }
-      } catch (error) {
-        console.error("Error fetching orderbook:", error)
-      }
-    }
-    
-    fetchOrderBook()
-    const interval = setInterval(fetchOrderBook, 2000)
-    return () => clearInterval(interval)
-  }, [open, sessionId])
-  
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-      <div className="relative w-full max-w-6xl h-[58vh] rounded-xl border-4 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-[0_20px_40px_rgba(0,0,0,0.55)] px-8 py-6">
+      <div className="relative w-full max-w-6xl h-[70vh] rounded-xl border-4 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-[0_20px_40px_rgba(0,0,0,0.55)] px-6 py-6 overflow-hidden">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 px-3 py-1 bg-red-500 text-white text-xs rounded-md shadow hover:bg-red-600 transition-colors z-10"
@@ -457,9 +433,11 @@ const PriceGraphModal = ({
           Close
         </button>
 
-        <div className="text-center text-2xl mb-4 mt-2 tracking-[0.15em]">Market Price</div>
+        <div className="text-center text-2xl mb-4 tracking-[0.15em]">Market Price</div>
 
-        <PriceGraph sessionId={sessionId} />
+        <div className="h-full">
+          <PriceGraph sessionId={sessionId} />
+        </div>
       </div>
     </div>
   )
@@ -886,10 +864,9 @@ function OfficePageContent() {
 
       {/* Main Scene */}
       <div className="relative z-10 w-full h-full">
-        <OfficeScene 
-          forecasterResponses={forecasterResponses}
-          onForecasterClick={(response) => setSelectedForecaster(response)}
-          traderFlashStates={traderFlashStates}
+        <OfficeScene
+          agents={agents}
+          onAgentClick={(agent) => setSelectedAgent(agent)}
         />
 
         {/* Central desk / terminal in the aisle */}
@@ -897,7 +874,7 @@ function OfficePageContent() {
           <button
             onClick={() => setOrderBookOpen(true)}
             className="relative group p-4 rounded-lg bg-transparent pointer-events-auto"
-            aria-label="Open market price graph"
+            aria-label="Open market price"
           >
             <img
               src="/sprites/desk-with-pc.png"
@@ -911,10 +888,10 @@ function OfficePageContent() {
         </div>
       </div>
 
-      <PriceGraphModal 
-        open={orderBookOpen} 
-        onClose={() => setOrderBookOpen(false)} 
-        sessionId={forecast?.id || null}
+      <PriceGraphModal
+        open={orderBookOpen}
+        onClose={() => setOrderBookOpen(false)}
+        sessionId={sessionId}
       />
 
       {/* Loading overlay */}
