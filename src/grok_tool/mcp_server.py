@@ -12,6 +12,15 @@ from pydantic import ValidationError
 
 from .tool import GrokXToolConfig, run_tool
 
+
+def _json_serializer(obj: Any) -> Any:
+    """Custom JSON serializer for objects not serializable by default."""
+    if hasattr(obj, "isoformat"):
+        return obj.isoformat()
+    if hasattr(obj, "__str__"):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
 SERVER_NAME = "grok-x-tool"
 TOOL_NAME = "grok_x_related_tweets"
 
@@ -98,7 +107,7 @@ async def _call_tool(name: str, arguments: dict[str, Any] | None):
     except Exception as exc:
         return [TextContent(type="text", text=f"Tool failed: {exc}")]
 
-    return {
+    response = {
         "topic": result["topic"],
         "seed_user": result["seed_user"],
         "start_time": result["start_time"],
@@ -107,6 +116,7 @@ async def _call_tool(name: str, arguments: dict[str, Any] | None):
         "tweets": result["tweets"],
         "related_users": result["related_users"],
     }
+    return [TextContent(type="text", text=json.dumps(response, default=_json_serializer, indent=2))]
 
 
 async def amain() -> None:
