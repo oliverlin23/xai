@@ -14,6 +14,10 @@ from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
+# Available Grok models
+GROK_MODEL_REASONING = "grok-4-1-fast-reasoning"  # Default - thinking/reasoning model
+GROK_MODEL_FAST = "grok-4-1-fast-non-reasoning"  # Fast model without reasoning overhead
+
 
 class GrokService:
     """
@@ -24,19 +28,20 @@ class GrokService:
     - Request throttling to prevent hitting rate limits
     - Rate limit header parsing (if available)
     - Configurable retry behavior
+    
+    Args:
+        model: Optional model override. Use GROK_MODEL_FAST for speed-critical tasks.
     """
 
-    def __init__(self):
+    def __init__(self, model: str | None = None):
         logger.info("[GROK SERVICE] Initializing GrokService")
-        logger.info("[GROK SERVICE] Loading settings from app.core.config")
         settings = get_settings()
-        logger.info("[GROK SERVICE] Creating AsyncOpenAI client (base_url: https://api.x.ai/v1)")
         self.client = AsyncOpenAI(
             api_key=settings.grok_api_key,
             base_url="https://api.x.ai/v1"
         )
-        self.model = "grok-4-1-fast-reasoning"  # Grok 4.1 Fast Reasoning - optimized for agentic workflows
-        logger.info(f"[GROK SERVICE] Model set to: {self.model}")
+        self.model = model or GROK_MODEL_REASONING
+        logger.info(f"[GROK SERVICE] Model: {self.model}")
         
         # Rate limiting configuration (from settings or defaults)
         self.max_requests_per_minute = getattr(
