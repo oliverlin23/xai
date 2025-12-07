@@ -16,7 +16,7 @@ export default function Page() {
     router.push("/office")
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (e.key === "Enter") {
       handleSubmit()
     }
@@ -74,20 +74,30 @@ export default function Page() {
                   imageRendering: "pixelated",
                 }}
               >
-                Supercaster
+                Cassandra
               </div>
             </div>
           </div>
 
           <div className="w-full flex justify-center">
             <div className="w-full max-w-2xl">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-              placeholder="What do you want to know?"
-                className="w-full px-5 py-4 rounded-lg border-4 border-[#2d3748] bg-white text-[#0f172a] placeholder:text-slate-500 shadow-[0_12px_30px_rgba(0,0,0,0.45)] focus:outline-none focus:border-[#2d7dd2] transition-colors"
-              />
+              <div className="relative w-full border-4 border-[#2d3748] rounded-lg bg-white shadow-[0_12px_30px_rgba(0,0,0,0.45)] focus-within:border-[#2d7dd2] transition-colors">
+                <textarea
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="What do you want to know?"
+                  className="w-full resize-none bg-transparent text-[#0f172a] placeholder:text-slate-500 px-5 py-4 rounded-lg focus:outline-none"
+                  rows={3}
+                  style={{ minHeight: "64px", maxHeight: "260px", overflow: "hidden" }}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement
+                    target.style.height = "auto"
+                    const maxHeight = 260 // ~8 lines
+                    target.style.height = Math.min(target.scrollHeight, maxHeight) + "px"
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>
