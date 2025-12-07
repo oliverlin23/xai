@@ -7,6 +7,7 @@ import Image from "next/image"
 import { api } from "@/lib/api"
 import { useRealtimeTrades, Trade, TraderState } from "@/hooks/useRealtimeTrades"
 import { Press_Start_2P } from "next/font/google"
+import { PriceGraph } from "@/components/trading/PriceGraph"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
@@ -399,7 +400,7 @@ const AgentDetailModal = ({
   )
 }
 
-const OrderBookModal = ({
+const PriceGraphModal = ({
   open,
   onClose,
   sessionId,
@@ -408,37 +409,11 @@ const OrderBookModal = ({
   onClose: () => void
   sessionId: string | null
 }) => {
-  const [orderBook, setOrderBook] = useState<{ bids: any[], asks: any[] }>({ bids: [], asks: [] })
-  
-  useEffect(() => {
-    if (!open || !sessionId) return
-    
-    // Fetch orderbook from API
-    const fetchOrderBook = async () => {
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/sessions/${sessionId}/orderbook`)
-        if (response.ok) {
-          const data = await response.json()
-          setOrderBook(data)
-        }
-      } catch (error) {
-        console.error("Error fetching orderbook:", error)
-      }
-    }
-    
-    fetchOrderBook()
-    const interval = setInterval(fetchOrderBook, 2000)
-    return () => clearInterval(interval)
-  }, [open, sessionId])
-  
   if (!open) return null
-
-  const maxAskSize = Math.max(...orderBook.asks.map((a) => a.quantity || 0), 1)
-  const maxBidSize = Math.max(...orderBook.bids.map((b) => b.quantity || 0), 1)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-      <div className="relative w-full max-w-3xl rounded-xl border-4 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-[0_20px_40px_rgba(0,0,0,0.55)] p-6">
+      <div className="relative w-full max-w-6xl h-[70vh] rounded-xl border-4 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-[0_20px_40px_rgba(0,0,0,0.55)] px-6 py-6 overflow-hidden">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 px-3 py-1 bg-red-500 text-white text-xs rounded-md shadow"
@@ -446,64 +421,10 @@ const OrderBookModal = ({
           Close
         </button>
 
-        <div className="text-center text-2xl mb-4 tracking-[0.15em]">Order Book</div>
+        <div className="text-center text-2xl mb-4 tracking-[0.15em]">Market Price</div>
 
-        <div className="space-y-4">
-          <div className="border border-red-400/40 rounded-lg p-4 bg-red-900/25 shadow-inner">
-            <div className="text-red-300 text-lg mb-2 tracking-[0.1em]">Asks</div>
-            <div className="space-y-2">
-              {orderBook.asks.length === 0 ? (
-                <div className="text-center text-red-400/50 text-sm py-2">No asks</div>
-              ) : (
-                orderBook.asks.slice(0, 5).map((ask, idx) => {
-                  const widthPct = Math.max((ask.quantity / maxAskSize) * 100, 6)
-                  return (
-                    <div
-                      key={idx}
-                      className="relative flex items-center text-sm bg-red-900/35 border border-red-500/30 rounded px-3 py-2 overflow-hidden"
-                    >
-                      <div
-                        className="absolute left-0 top-0 h-full bg-red-600/30"
-                        style={{ width: `${widthPct}%` }}
-                      />
-                      <div className="relative flex-1 flex justify-between items-center">
-                        <span className="text-red-200 font-semibold">{ask.price}¢</span>
-                        <span className="text-red-100">{ask.quantity?.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="border border-emerald-400/40 rounded-lg p-4 bg-emerald-900/25 shadow-inner">
-            <div className="text-emerald-300 text-lg mb-2 tracking-[0.1em]">Bids</div>
-            <div className="space-y-2">
-              {orderBook.bids.length === 0 ? (
-                <div className="text-center text-emerald-400/50 text-sm py-2">No bids</div>
-              ) : (
-                orderBook.bids.slice(0, 5).map((bid, idx) => {
-                  const widthPct = Math.max((bid.quantity / maxBidSize) * 100, 6)
-                  return (
-                    <div
-                      key={idx}
-                      className="relative flex items-center text-sm bg-emerald-900/35 border border-emerald-500/30 rounded px-3 py-2 overflow-hidden"
-                    >
-                      <div
-                        className="absolute left-0 top-0 h-full bg-emerald-600/30"
-                        style={{ width: `${widthPct}%` }}
-                      />
-                      <div className="relative flex-1 flex justify-between items-center">
-                        <span className="text-emerald-200 font-semibold">{bid.price}¢</span>
-                        <span className="text-emerald-100">{bid.quantity?.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
+        <div className="h-full">
+          <PriceGraph sessionId={sessionId} />
         </div>
       </div>
     </div>
@@ -668,7 +589,7 @@ function OfficePageContent() {
 
       {/* Main Scene */}
       <div className="relative z-10 w-full h-full">
-        <OfficeScene 
+        <OfficeScene
           agents={agents}
           onAgentClick={(agent) => setSelectedAgent(agent)}
         />
@@ -678,7 +599,7 @@ function OfficePageContent() {
           <button
             onClick={() => setOrderBookOpen(true)}
             className="relative group p-4 rounded-lg bg-transparent pointer-events-auto"
-            aria-label="Open order book terminal"
+            aria-label="Open market price"
           >
             <img
               src="/sprites/desk-with-pc.png"
@@ -686,13 +607,17 @@ function OfficePageContent() {
               className="w-24 h-24 object-contain pixelated drop-shadow-[0_10px_15px_rgba(0,0,0,0.45)] transition-transform duration-150 group-hover:-translate-y-1"
             />
             <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-10 px-3 py-1 rounded-md bg-slate-900/90 text-[11px] text-slate-100 border border-white/10 shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap">
-              View Order Book
+              View Market Price
             </div>
           </button>
         </div>
       </div>
 
-      <OrderBookModal open={orderBookOpen} onClose={() => setOrderBookOpen(false)} sessionId={sessionId} />
+      <PriceGraphModal
+        open={orderBookOpen}
+        onClose={() => setOrderBookOpen(false)}
+        sessionId={sessionId}
+      />
 
       {/* Loading overlay */}
       {isLoading && (
