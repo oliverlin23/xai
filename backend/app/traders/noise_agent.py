@@ -29,7 +29,7 @@ from x_search.communities import SPHERES, get_sphere, get_sphere_names
 from x_search.tool import XSearchConfig
 
 # Import semantic filter
-from app.noise_traders.semantic_filter import (
+from app.traders.semantic_filter import (
     SemanticFilter,
     SemanticFilterConfig,
     FullSemanticFilterOutput,
@@ -94,6 +94,19 @@ class NoiseTraderOutput(BaseModel):
         ge=0.0, le=1.0,
         description="Confidence in this prediction (based on evidence quality)"
     )
+    
+    # Memory for next round
+    notes_for_next_round: str = Field(
+        default="",
+        description=(
+            "Notes to yourself for the next trading round. Include: "
+            "1) Key insights or patterns you noticed, "
+            "2) What you were uncertain about that might clarify, "
+            "3) Specific things to watch for in new information, "
+            "4) Your current thesis and what would change your mind. "
+            "This will be provided back to you in the next round."
+        )
+    )
 
 
 def get_x_search_tool():
@@ -140,6 +153,8 @@ def _build_tool_definition(sphere_key: str) -> Dict[str, Any]:
 
 SUPERFORECASTER_SYSTEM_PROMPT = """You are an advanced AI forecasting system fine-tuned to provide calibrated probabilistic forecasts under uncertainty. Your performance is evaluated according to the Brier score.
 
+You are a PERSISTENT TRADER who will be called multiple times throughout a trading session. You can save notes for yourself that will be provided back to you in the next round.
+
 CRITICAL CALIBRATION RULES:
 - Do NOT treat 0.5% (1:199 odds) and 5% (1:19) as similarly "small" probabilities
 - Do NOT treat 90% (9:1) and 99% (99:1) as similarly "high" probabilities  
@@ -152,13 +167,23 @@ BIAS AWARENESS:
 - Adjust for these biases when weighing evidence from social media
 
 YOUR FORECASTING PROCESS:
-1. Extract key facts from background information (no conclusions yet)
-2. List reasons why the answer might be NO with strength ratings (1-10)
-3. List reasons why the answer might be YES with strength ratings (1-10)
-4. Aggregate considerations - how do competing factors interact?
-5. Output initial probability
-6. Reflect: sanity checks, base rates, calibration, over/underconfidence
-7. Output final prediction
+1. Review your previous notes (if any) - what did you want to track?
+2. Extract key facts from background information (no conclusions yet)
+3. List reasons why the answer might be NO with strength ratings (1-10)
+4. List reasons why the answer might be YES with strength ratings (1-10)
+5. Aggregate considerations - how do competing factors interact?
+6. Output initial probability
+7. Reflect: sanity checks, base rates, calibration, over/underconfidence
+8. Output final prediction
+9. Write notes for your next round - what should you remember?
+
+NOTES FOR NEXT ROUND:
+After making your prediction, write notes to yourself for the next trading round. Include:
+- Key insights or patterns you noticed
+- What you're uncertain about that might clarify with new information
+- Specific things to watch for (e.g., "watch if Fed language changes", "monitor inflation data")
+- Your current thesis and what evidence would change your mind
+- Any trends you're tracking in the sentiment
 
 SPHERE OF INFLUENCE CONTEXT:
 You are monitoring {sphere_name} on X.
@@ -252,6 +277,20 @@ class NoiseTrader(BaseAgent):
             )
         else:
             self._semantic_filter = None
+        
+        # Track notes across rounds
+        self._previous_notes: str = ""
+
+    @property
+    def last_notes(self) -> str:
+        """Get the notes from the last prediction (for passing to next round)"""
+        if self.output_data:
+            return self.output_data.get("notes_for_next_round", "")
+        return ""
+    
+    def set_previous_notes(self, notes: str) -> None:
+        """Set notes from a previous round to be included in next prediction"""
+        self._previous_notes = notes
 
     async def build_user_message(
         self, 
@@ -267,6 +306,8 @@ class NoiseTrader(BaseAgent):
             - resolution_date: str - When the market resolves (optional)
             - order_book: dict - Current bids and asks
             - recent_trades: list - Last 5 trades
+            - previous_notes: str - Notes from previous round (optional)
+            - round_number: int - Current trading round (optional)
         
         Args:
             input_data: Market data dictionary
@@ -277,6 +318,8 @@ class NoiseTrader(BaseAgent):
         resolution_date = input_data.get("resolution_date", "Not specified")
         order_book = input_data.get("order_book", {})
         recent_trades = input_data.get("recent_trades", [])
+        previous_notes = input_data.get("previous_notes", "")
+        round_number = input_data.get("round_number", 1)
         
         # Calculate baseline from order book
         bids = order_book.get("bids", [])
@@ -312,8 +355,24 @@ class NoiseTrader(BaseAgent):
         # Get sphere name for display
         sphere_name = self._sphere_data.name if self._sphere_data else self.sphere.upper()
         
+        # Format previous notes section
+        if previous_notes:
+            previous_notes_section = f"""
+YOUR NOTES FROM PREVIOUS ROUND:
+{previous_notes}
+
+Review these notes. What has changed? What should you update in your thinking?
+"""
+        else:
+            previous_notes_section = """
+YOUR NOTES FROM PREVIOUS ROUND:
+(This is your first round - no previous notes available)
+"""
+        
         # Build superforecaster-style message
-        message = f"""FORECAST QUESTION: {market_topic}
+        message = f"""TRADING ROUND: {round_number}
+
+FORECAST QUESTION: {market_topic}
 
 RESOLUTION CRITERIA:
 {resolution_criteria}
@@ -321,7 +380,7 @@ RESOLUTION CRITERIA:
 IMPORTANT: Today's date is {current_date}. Your pretraining knowledge may be outdated.
 
 RESOLUTION DATE: {resolution_date}
-
+{previous_notes_section}
 BASELINE FORECAST (Current Market Price): {baseline_probability}%
 This is the market's current implied probability. Do not rely on this as an anchor.
 
@@ -334,13 +393,15 @@ BACKGROUND INFORMATION (from {sphere_name} on X):
 Recall the question you are forecasting: {market_topic}
 
 Please provide your forecast following the structured format:
-1. Extract key facts from the background information (no conclusions yet)
-2. List reasons why NO (with strength 1-10 for each)
-3. List reasons why YES (with strength 1-10 for each)
-4. Analyze how competing factors interact, adjust for news negativity/sensationalism bias
-5. Output initial probability
-6. Reflect: sanity checks, base rates, over/underconfidence, calibration
-7. Output final prediction (0-100)
+1. Review your previous notes (if any) - what were you tracking?
+2. Extract key facts from the background information (no conclusions yet)
+3. List reasons why NO (with strength 1-10 for each)
+4. List reasons why YES (with strength 1-10 for each)
+5. Analyze how competing factors interact, adjust for news negativity/sensationalism bias
+6. Output initial probability
+7. Reflect: sanity checks, base rates, over/underconfidence, calibration
+8. Output final prediction (0-100)
+9. Write notes for your next round (what to remember, what to watch for, your current thesis)
 """
         
         return message
@@ -532,6 +593,7 @@ Please provide your forecast following the structured format:
                         "tweets_analyzed": filtered_tweets.relevant_tweet_count,
                         "baseline_probability": baseline,
                         "confidence": 0.3,
+                        "notes_for_next_round": "",
                     }
                 
                 # Ensure metadata fields are populated
@@ -541,6 +603,8 @@ Please provide your forecast following the structured format:
                     raw_output["baseline_probability"] = getattr(self, '_baseline_probability', 50)
                 if "signal" not in raw_output:
                     raw_output["signal"] = "uncertain"
+                if "notes_for_next_round" not in raw_output:
+                    raw_output["notes_for_next_round"] = ""
                 
                 validated_output = self.output_schema(**raw_output)
                 self.output_data = validated_output.model_dump()
@@ -661,7 +725,12 @@ Please provide your forecast following the structured format:
                         "tweets_analyzed": 0,
                         "baseline_probability": 50,
                         "confidence": 0.3,
+                        "notes_for_next_round": "",
                     }
+                
+                # Ensure notes field exists
+                if "notes_for_next_round" not in raw_output:
+                    raw_output["notes_for_next_round"] = ""
                 
                 validated_output = self.output_schema(**raw_output)
                 self.output_data = validated_output.model_dump()

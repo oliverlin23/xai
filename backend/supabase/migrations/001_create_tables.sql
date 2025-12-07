@@ -9,16 +9,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     question_text TEXT NOT NULL,
     question_type VARCHAR(50) NOT NULL DEFAULT 'binary',
-    status VARCHAR(50) NOT NULL DEFAULT 'running',
-    current_phase VARCHAR(50),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
-    prediction_result JSONB,
-    total_cost_tokens INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_sessions_status ON sessions(status);
 CREATE INDEX idx_sessions_created_at ON sessions(created_at DESC);
 
 -- Agent logs table: Real-time agent execution tracking

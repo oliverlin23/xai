@@ -7,7 +7,7 @@ from .models import (
     get_trader_type, validate_trader_name,
 )
 from .orderbook import OrderBook
-from .client import MarketClient
+from .client import MarketClient, AsyncMarketClient, MarketMaker, SupabaseMarketMaker
 from .trading import TradingOrchestrator, TradingConfig, TradeResult
 
 __all__ = [
@@ -26,6 +26,9 @@ __all__ = [
     "validate_trader_name",
     "OrderBook",
     "MarketClient",
+    "AsyncMarketClient",
+    "MarketMaker",
+    "SupabaseMarketMaker",
     "TradingOrchestrator",
     "TradingConfig",
     "TradeResult",

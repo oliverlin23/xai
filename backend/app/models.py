@@ -51,30 +51,9 @@ class Session(Base):
     question_text = Column(Text, nullable=False)
     question_type = Column(String(50), nullable=False, default="binary")
     status = Column(String(50), nullable=False, default="running")
-    current_phase = Column(String(50))
-    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
-    started_at = Column(TIMESTAMPTZ)
-    completed_at = Column(TIMESTAMPTZ)
-    total_cost_tokens = Column(Integer, default=0)
-
-
-class ForecasterResponse(Base):
-    """Individual forecaster response for a session"""
-    __tablename__ = "forecaster_responses"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False)
-    forecaster_class = Column(String(50), nullable=False)  # e.g., 'conservative', 'momentum', 'balanced'
-    prediction_result = Column(JSONB)
-    prediction_probability = Column(DECIMAL(5, 4))  # Probability of event (0.0-1.0)
-    confidence = Column(DECIMAL(5, 4))  # Confidence in probability estimate (0.0-1.0)
-    total_duration_seconds = Column(DECIMAL(10, 2))  # Total execution time in seconds
-    total_duration_formatted = Column(String(50))
-    phase_durations = Column(JSONB)
-    status = Column(String(50), nullable=False, default="running")
-    error_message = Column(Text)
-    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
-    completed_at = Column(TIMESTAMPTZ)
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    started_at = Column(TIMESTAMP)
+    completed_at = Column(TIMESTAMP)
 
 
 class AgentLog(Base):
