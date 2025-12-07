@@ -8,13 +8,23 @@ interface ForecastCardProps {
   confidence: number  // Confidence in the probability estimate (0.0-1.0)
   reasoning: string
   keyFactors: string[]
+  showReasoning?: boolean
+  showKeyFactors?: boolean
 }
 
-export function ForecastCard({ prediction, prediction_probability, confidence, reasoning, keyFactors }: ForecastCardProps) {
+export function ForecastCard({
+  prediction,
+  prediction_probability,
+  confidence,
+  reasoning,
+  keyFactors,
+  showReasoning = true,
+  showKeyFactors = true,
+}: ForecastCardProps) {
   // Fallback to confidence for backward compatibility if prediction_probability not provided
   const probability = prediction_probability !== undefined ? prediction_probability : confidence
 
-  // Light formatting cleanup for markdown-ish reasoning strings
+  // Light formatting cleanup for markdown-ish strings (reasoning, factors)
   const formatReasoning = (text: string) => {
     return text
       .split(/\n+/)
@@ -62,34 +72,42 @@ export function ForecastCard({ prediction, prediction_probability, confidence, r
         )}
       </div>
 
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Reasoning</h3>
-        <div className="space-y-2 font-mono text-[13px] md:text-sm text-gray-800 leading-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 whitespace-pre-wrap">
-          {reasoningLines.length === 0 ? (
-            <p className="font-sans italic text-gray-500">No reasoning provided.</p>
-          ) : (
-            reasoningLines.map((line, idx) => (
-              <p key={idx}>
-                {line}
-              </p>
-            ))
-          )}
+      {showReasoning && (
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Reasoning</h3>
+          <div className="space-y-2 font-mono text-[13px] md:text-sm text-gray-800 leading-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 whitespace-pre-wrap">
+            {reasoningLines.length === 0 ? (
+              <p className="font-sans italic text-gray-500">No reasoning provided.</p>
+            ) : (
+              reasoningLines.map((line, idx) => (
+                <p key={idx}>
+                  {line}
+                </p>
+              ))
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Key Factors</h3>
-        <ul className="space-y-2">
-          {keyFactors.map((factor, index) => (
-            <li key={index} className="flex items-start">
-              <span className="text-indigo-600 mr-2">•</span>
-              <span className="text-gray-800/90 text-sm md:text-base leading-7">
-                {factor}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {showKeyFactors && (
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Key Factors</h3>
+          <div className="space-y-2">
+            {keyFactors.map((factor, index) => {
+              const lines = formatReasoning(factor)
+              const rendered = lines.length > 0 ? lines.join(" ") : factor
+              return (
+                <div key={index} className="flex items-start">
+                  <span className="text-indigo-600 mr-2">•</span>
+                  <span className="text-gray-800/90 text-sm md:text-base leading-7">
+                    {rendered}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

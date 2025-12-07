@@ -8,6 +8,12 @@ interface FactorListProps {
 }
 
 export function FactorList({ factors }: FactorListProps) {
+  const formatText = (text: string) =>
+    text
+      .split(/\n+/)
+      .map((line) => line.trim().replace(/^#+\s*/, "").replace(/^[-*]\s*/, "").replace(/^\d+\.\s*/, ""))
+      .filter(Boolean)
+
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
       <h2 className="text-xl font-bold text-gray-900 mb-4">
@@ -41,15 +47,21 @@ export function FactorList({ factors }: FactorListProps) {
                 )}
 
                 {factor.description && (
-                  <p className="text-sm text-gray-600 mb-2">
-                    {factor.description}
-                  </p>
+                  <div className="text-sm font-mono text-gray-800 leading-6 whitespace-pre-wrap mb-2 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                    {(() => {
+                      const lines = formatText(factor.description)
+                      return lines.length ? lines.join(" ") : factor.description
+                    })()}
+                  </div>
                 )}
 
                 {factor.research_summary && (
-                  <div className="mt-3 p-3 bg-gray-50 rounded text-sm text-gray-700">
-                    <strong className="block mb-1">Research Summary:</strong>
-                    {factor.research_summary}
+                  <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-800 font-mono leading-6 whitespace-pre-wrap">
+                    <strong className="block mb-2 font-sans text-gray-900">Research Summary:</strong>
+                    {(() => {
+                      const lines = formatText(factor.research_summary)
+                      return lines.length ? lines.join(" ") : factor.research_summary
+                    })()}
                   </div>
                 )}
               </div>

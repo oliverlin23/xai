@@ -59,6 +59,9 @@ export default function ForecastResultPage() {
   const totalTokens =
     Number.isFinite(parsedTotalCost) && parsedTotalCost > 0 ? parsedTotalCost : agentTokenTotal
 
+  const formattedReasoning = forecast.prediction_result?.reasoning || ""
+  const keyFactors = forecast.prediction_result?.key_factors || []
+
   return (
     <div className="max-w-7xl mx-auto px-4 pt-24 pb-10">
       <div className="mb-8 flex items-center justify-between">
@@ -78,23 +81,25 @@ export default function ForecastResultPage() {
         </Link>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6 mb-8 items-start">
-        <div className="lg:col-span-2">
+      <div className="grid lg:grid-cols-3 gap-6 mb-8 items-stretch">
+        <div className="lg:col-span-2 h-full">
           <ForecastCard
             prediction={forecast.prediction_result.prediction}
             prediction_probability={forecast.prediction_result.prediction_probability}
             confidence={forecast.prediction_result.confidence}
-            reasoning={forecast.prediction_result.reasoning}
-            keyFactors={forecast.prediction_result.key_factors}
+            reasoning={formattedReasoning}
+            keyFactors={keyFactors}
+            showReasoning={false}
+            showKeyFactors={false}
           />
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="h-full">
+          <div className="bg-white rounded-lg shadow-lg p-6 h-full flex flex-col">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               Forecast Statistics
             </h3>
-            <div className="space-y-3 text-sm">
+            <div className="space-y-3 text-sm flex-1">
               <div className="flex justify-between">
                 <span className="text-gray-600">Total Agents</span>
                 <span className="font-semibold">{forecast.agent_logs.length}</span>
@@ -122,9 +127,43 @@ export default function ForecastResultPage() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <FactorList factors={forecast.factors} />
-        <AgentMonitor agentLogs={forecast.agent_logs} currentPhase="all" />
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Reasoning</h3>
+          <div className="font-mono text-[13px] md:text-sm text-gray-800 leading-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 whitespace-pre-wrap">
+            {formattedReasoning.trim()
+              ? formattedReasoning
+              : <span className="font-sans italic text-gray-500">No reasoning provided.</span>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Key Factors</h3>
+          {keyFactors.length === 0 ? (
+            <p className="italic text-gray-500">No key factors provided.</p>
+          ) : (
+            <ul className="space-y-2">
+              {keyFactors.map((factor: string, index: number) => (
+                <li key={index} className="flex items-start">
+                  <span className="text-indigo-600 mr-2">•</span>
+                  <span className="text-gray-800/90 text-sm md:text-base leading-7">
+                    {factor}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Discovered Factors</h3>
+          <FactorList factors={forecast.factors} />
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Agent Activity</h3>
+          <AgentMonitor agentLogs={forecast.agent_logs} currentPhase="all" />
+        </div>
       </div>
     </div>
   )
