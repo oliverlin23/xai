@@ -30,7 +30,7 @@ class XApiError(RuntimeError):
 class XSearchRequest(BaseModel):
     """Incoming request payload."""
 
-    topic: str = Field(..., min_length=1, max_length=256)
+    topic: str = Field(..., min_length=1)
     username: str | None = Field(
         default=None,
         description="Optional seed username. If None, performs keyword-only search.",
@@ -50,8 +50,49 @@ class XSearchRequest(BaseModel):
     )
 
     @validator("topic")
-    def _sanitize_topic(cls, value: str) -> str:
-        return value.strip()
+    def _sanitize_and_truncate_topic(cls, value: str) -> str:
+        """Sanitize topic and truncate to 256 chars while preserving complete OR terms."""
+        value = value.strip()
+        max_len = 256
+        
+        if len(value) <= max_len:
+            return value
+        
+        # Smart truncation: preserve complete OR terms
+        # Split by " OR " to get individual terms
+        terms = value.split(" OR ")
+        
+        if len(terms) == 1:
+            # No OR operators, just truncate
+            LOGGER.warning(f"Topic truncated from {len(value)} to {max_len} chars")
+            return value[:max_len]
+        
+        # Build up the query keeping complete OR terms
+        result_terms = []
+        current_len = 0
+        
+        for i, term in enumerate(terms):
+            # Calculate length with " OR " separator (except for first term)
+            separator_len = 4 if i > 0 else 0  # " OR " is 4 chars
+            term_len = len(term) + separator_len
+            
+            if current_len + term_len <= max_len:
+                result_terms.append(term)
+                current_len += term_len
+            else:
+                break
+        
+        if not result_terms:
+            # Edge case: first term itself is too long, truncate it
+            LOGGER.warning(f"Topic truncated from {len(value)} to {max_len} chars")
+            return terms[0][:max_len]
+        
+        truncated = " OR ".join(result_terms)
+        LOGGER.warning(
+            f"Topic truncated from {len(value)} to {len(truncated)} chars "
+            f"({len(result_terms)}/{len(terms)} terms kept)"
+        )
+        return truncated
 
     @validator("username")
     def _sanitize_username(cls, value: str | None) -> str | None:

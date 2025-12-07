@@ -47,7 +47,7 @@ class TradingConfig:
     # positive = more aggressive (cross spread)
     price_aggression: int = 0
     
-    # Maximum position size per agent per market
+    # Maximum position size per trader
     max_position: int = 100
 
 
@@ -83,8 +83,8 @@ class TradingOrchestrator:
             (side, price) or (None, None) if no trade
         
         Logic:
-            - confidence > market_price + min_edge: buy YES at (confidence*100 - aggression)
-            - confidence < market_price - min_edge: buy NO at (100 - confidence*100 - aggression)
+            - confidence > market_price + min_edge: buy at (confidence*100 - aggression)
+            - confidence < market_price - min_edge: sell at (confidence*100 + aggression)
             - otherwise: no trade (not enough edge)
         """
         conf_price = int(confidence * 100)
@@ -95,29 +95,29 @@ class TradingOrchestrator:
         if market_price is None:
             # No market yet - place order at confidence
             if confidence >= 0.5:
-                return ("yes", conf_price - self.config.price_aggression)
+                return ("buy", conf_price - self.config.price_aggression)
             else:
-                return ("no", 100 - conf_price - self.config.price_aggression)
+                return ("sell", conf_price + self.config.price_aggression)
         
         edge = conf_price - market_price
         
         if edge >= self.config.min_edge:
-            # Agent more bullish than market - buy YES
+            # Agent more bullish than market - buy
             price = conf_price - self.config.price_aggression
-            return ("yes", max(1, min(99, price)))
+            return ("buy", max(1, min(99, price)))
         
         elif edge <= -self.config.min_edge:
-            # Agent more bearish than market - buy NO
-            price = 100 - conf_price - self.config.price_aggression
-            return ("no", max(1, min(99, price)))
+            # Agent more bearish than market - sell
+            price = conf_price + self.config.price_aggression
+            return ("sell", max(1, min(99, price)))
         
         # Not enough edge
         return (None, None)
 
     def execute_belief(
         self,
-        market_id: str,
-        agent_id: str,
+        session_id: str,
+        trader_name: str,
         confidence: float,
         quantity: Optional[int] = None,
     ) -> TradeResult:
@@ -125,8 +125,8 @@ class TradingOrchestrator:
         Execute a trade based on agent's confidence.
         
         Args:
-            market_id: Market to trade in
-            agent_id: Agent placing the trade
+            session_id: Session/market to trade in
+            trader_name: Trader placing the trade (must be valid enum)
             confidence: Agent's belief (0.0 to 1.0)
             quantity: Number of contracts (default from config)
         
@@ -137,7 +137,7 @@ class TradingOrchestrator:
         
         try:
             # Get current market state
-            market_price = self.client.get_mid_price(market_id)
+            market_price = self.client.get_mid_price(session_id)
             
             # Convert confidence to trade
             side, price = self.confidence_to_trade(confidence, market_price)
@@ -149,12 +149,12 @@ class TradingOrchestrator:
                 )
             
             # Check position limits
-            position = self.client.get_position(market_id, agent_id)
-            current_pos = position.get("yes_quantity", 0) - position.get("no_quantity", 0)
+            state = self.client.get_trader_state(session_id, trader_name)
+            current_pos = state.get("position", 0)
             
-            if side == "yes" and current_pos + qty > self.config.max_position:
+            if side == "buy" and current_pos + qty > self.config.max_position:
                 qty = max(0, self.config.max_position - current_pos)
-            elif side == "no" and current_pos - qty < -self.config.max_position:
+            elif side == "sell" and current_pos - qty < -self.config.max_position:
                 qty = max(0, self.config.max_position + current_pos)
             
             if qty <= 0:
@@ -165,8 +165,8 @@ class TradingOrchestrator:
             
             # Execute order
             result = self.client.place_order(
-                market_id=market_id,
-                agent_id=agent_id,
+                session_id=session_id,
+                trader_name=trader_name,
                 side=side,
                 price=price,
                 quantity=qty,
@@ -193,8 +193,8 @@ class TradingOrchestrator:
 
     def execute_prediction(
         self,
-        market_id: str,
-        agent_id: str,
+        session_id: str,
+        trader_name: str,
         prediction: dict,
         quantity: Optional[int] = None,
     ) -> TradeResult:
@@ -225,42 +225,30 @@ class TradingOrchestrator:
             )
         
         return self.execute_belief(
-            market_id=market_id,
-            agent_id=agent_id,
+            session_id=session_id,
+            trader_name=trader_name,
             confidence=float(confidence),
             quantity=quantity,
         )
 
-    def cancel_all_orders(self, market_id: str, agent_id: str) -> int:
-        """Cancel all open orders for an agent. Returns count cancelled."""
-        orders = self.client.get_agent_orders(agent_id, active_only=True)
-        cancelled = 0
-        for order in orders:
-            if order.get("market_id") == market_id:
-                try:
-                    self.client.cancel_order(market_id, order["id"], agent_id)
-                    cancelled += 1
-                except Exception:
-                    pass
-        return cancelled
+    def cancel_all_orders(self, session_id: str, trader_name: str) -> int:
+        """Cancel all open orders for a trader. Returns count cancelled."""
+        result = self.client.cancel_all_orders(session_id, trader_name)
+        return result.get("cancelled", 0)
 
-    def get_market_state(self, market_id: str) -> dict:
+    def get_market_state(self, session_id: str) -> dict:
         """Get current market state for agent context."""
-        market = self.client.get_market(market_id)
-        orderbook = self.client.get_orderbook(market_id)
+        orderbook = self.client.get_orderbook(session_id)
         
         best_bid = orderbook["bids"][0]["price"] if orderbook["bids"] else None
         best_ask = orderbook["asks"][0]["price"] if orderbook["asks"] else None
         
         return {
-            "market_id": market_id,
-            "question": market.get("question"),
-            "status": market.get("status"),
-            "last_price": market.get("last_price"),
-            "volume": market.get("volume"),
+            "session_id": session_id,
+            "last_price": orderbook.get("last_price"),
+            "volume": orderbook.get("volume"),
             "best_bid": best_bid,
             "best_ask": best_ask,
             "mid_price": (best_bid + best_ask) / 2 if (best_bid and best_ask) else None,
             "spread": best_ask - best_bid if (best_bid and best_ask) else None,
         }
-

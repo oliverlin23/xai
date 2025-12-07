@@ -1,7 +1,9 @@
 """
-Market models - in-memory for now, can be persisted to DB later.
+Market models - aligned with Supabase schema (003_create_trading_tables.sql).
 
-Inspired by Kalshi/Polymarket but simplified for agent trading.
+Simplified: everyone trades probability of YES (0-100 cents).
+- Buy = think probability is higher
+- Sell = think probability is lower
 """
 
 from __future__ import annotations
@@ -14,26 +16,35 @@ from typing import Optional
 import uuid
 
 
+# Matches DB enum: order_side
 class OrderSide(str, Enum):
-    """Order side - YES means betting the event happens, NO means against."""
-    YES = "yes"
-    NO = "no"
+    BUY = "buy"
+    SELL = "sell"
 
 
+# Matches DB enum: order_status
 class OrderStatus(str, Enum):
-    """Order lifecycle status."""
     OPEN = "open"
     FILLED = "filled"
     PARTIALLY_FILLED = "partially_filled"
     CANCELLED = "cancelled"
-    EXPIRED = "expired"
 
 
-class MarketStatus(str, Enum):
-    """Market lifecycle status."""
-    OPEN = "open"
-    CLOSED = "closed"
-    RESOLVED = "resolved"
+# Valid trader names (matches DB enum: trader_name)
+VALID_TRADER_NAMES = {
+    # Fundamental traders
+    "1", "2", "3", "4", "5",
+    # Noise traders (spheres)
+    "eacc_sovereign", "america_first", "blue_establishment", "progressive_left",
+    "optimizer_idw", "fintwit_market", "builder_engineering", "academic_research", "osint_intel",
+}
+
+
+def validate_trader_name(name: str) -> str:
+    """Validate trader name matches DB enum."""
+    if name not in VALID_TRADER_NAMES:
+        raise ValueError(f"Invalid trader name: {name}. Must be one of {VALID_TRADER_NAMES}")
+    return name
 
 
 @dataclass
@@ -42,19 +53,22 @@ class Order:
     A limit order in the order book.
     
     Price is in cents (0-100) representing probability.
-    - YES at 60 means "I'll pay 60 cents to win $1 if event happens"
-    - NO at 60 means "I'll pay 60 cents to win $1 if event doesn't happen"
+    - Buy at 60 = "I'll pay 60 cents, betting probability > 60%"
+    - Sell at 60 = "I'll take 60 cents, betting probability < 60%"
     """
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    market_id: str = ""
-    agent_id: str = ""  # Which agent placed this order
-    side: OrderSide = OrderSide.YES
+    session_id: str = ""
+    trader_name: str = ""  # Must be valid trader_name enum value
+    side: OrderSide = OrderSide.BUY
     price: int = 50  # 0-100 cents
-    quantity: int = 1  # Number of contracts
+    quantity: int = 1
     filled_quantity: int = 0
     status: OrderStatus = OrderStatus.OPEN
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self):
+        if self.trader_name:
+            validate_trader_name(self.trader_name)
 
     @property
     def remaining_quantity(self) -> int:
@@ -67,7 +81,6 @@ class Order:
     def fill(self, qty: int) -> None:
         """Fill some quantity of this order."""
         self.filled_quantity += qty
-        self.updated_at = datetime.now(UTC)
         if self.filled_quantity >= self.quantity:
             self.status = OrderStatus.FILLED
         elif self.filled_quantity > 0:
@@ -76,69 +89,33 @@ class Order:
     def cancel(self) -> None:
         """Cancel this order."""
         self.status = OrderStatus.CANCELLED
-        self.updated_at = datetime.now(UTC)
 
 
 @dataclass
 class Trade:
-    """A matched trade between two orders."""
+    """A matched trade between a buyer and seller."""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    market_id: str = ""
-    buy_order_id: str = ""
-    sell_order_id: str = ""
-    buyer_agent_id: str = ""
-    seller_agent_id: str = ""
+    session_id: str = ""
+    buyer_name: str = ""
+    seller_name: str = ""
     price: int = 0  # Execution price
     quantity: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
-class Position:
-    """An agent's position in a market."""
-    agent_id: str = ""
-    market_id: str = ""
-    yes_quantity: int = 0  # Contracts betting YES
-    no_quantity: int = 0   # Contracts betting NO
-    avg_yes_price: Decimal = Decimal("0")
-    avg_no_price: Decimal = Decimal("0")
-    realized_pnl: Decimal = Decimal("0")
-
-    @property
-    def net_position(self) -> int:
-        """Positive = net long YES, negative = net long NO."""
-        return self.yes_quantity - self.no_quantity
-
-
-@dataclass
-class Market:
+class TraderState:
     """
-    A prediction market for a binary question.
-    
-    Settlement: If event happens, YES pays $1, NO pays $0.
-                If event doesn't happen, YES pays $0, NO pays $1.
+    A trader's current state in a session.
+    Matches trader_state_live table.
     """
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    question: str = ""
-    description: str = ""
-    session_id: Optional[str] = None  # Link to forecast session
-    status: MarketStatus = MarketStatus.OPEN
-    resolution: Optional[bool] = None  # True = YES wins, False = NO wins
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    closes_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
-    
-    # Cached market stats
-    last_price: Optional[int] = None
-    volume: int = 0  # Total contracts traded
+    session_id: str = ""
+    name: str = ""
+    system_prompt: str = ""
+    position: int = 0  # Positive = long, negative = short
+    cash: Decimal = Decimal("1000.00")
+    pnl: Decimal = Decimal("0")
 
-    def resolve(self, outcome: bool) -> None:
-        """Resolve the market with final outcome."""
-        self.resolution = outcome
-        self.status = MarketStatus.RESOLVED
-        self.resolved_at = datetime.now(UTC)
-
-    def close(self) -> None:
-        """Close the market for new orders."""
-        self.status = MarketStatus.CLOSED
-
+    def __post_init__(self):
+        if self.name:
+            validate_trader_name(self.name)

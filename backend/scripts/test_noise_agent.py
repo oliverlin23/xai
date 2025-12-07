@@ -13,6 +13,9 @@ Usage:
     
     # Custom sphere and question
     uv run python scripts/test_noise_agent.py --sphere fintwit_market --question "Will BTC hit 100k?"
+    
+    # Save results to file
+    uv run python scripts/test_noise_agent.py --save
 
 Requires:
     - X_BEARER_TOKEN in .env (for X API)
@@ -23,6 +26,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Add parent directories to path for imports
@@ -38,14 +42,14 @@ from app.noise_traders.noise_agent import NoiseTrader
 from app.noise_traders.semantic_filter import SemanticFilterConfig
 
 logging.basicConfig(
-    level=logging.WARNING,  # Only show warnings and errors by default
+    level=logging.WARNING,
     format="%(asctime)s | %(levelname)-8s | %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # But allow our logger to show info
+logger.setLevel(logging.INFO)
 
-# Suppress noisy logging - only show errors
+# Suppress noisy logging
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("httpcore").setLevel(logging.ERROR)
 logging.getLogger("app.agents.base").setLevel(logging.WARNING)
@@ -73,17 +77,117 @@ SAMPLE_MARKET_DATA = {
     "recent_trades": [
         {"side": "buy", "quantity": 25, "price": 0.43, "time_ago": "2 min ago"},
         {"side": "sell", "quantity": 15, "price": 0.44, "time_ago": "5 min ago"},
-        {"side": "buy", "quantity": 50, "price": 0.42, "time_ago": "8 min ago"},
-        {"side": "buy", "quantity": 30, "price": 0.41, "time_ago": "15 min ago"},
-        {"side": "sell", "quantity": 20, "price": 0.45, "time_ago": "22 min ago"},
     ]
 }
+
+
+def save_results_to_file(
+    sphere: str,
+    question: str,
+    filtered_result,
+    result: dict | None,
+    search_time: float,
+    forecast_time: float,
+    tokens_used: int,
+    search_query: str | None = None,
+):
+    """Save test results to a timestamped text file"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Sanitize question for filename
+    safe_question = "".join(c if c.isalnum() or c in " -_" else "" for c in question[:30])
+    safe_question = safe_question.replace(" ", "_")
+    
+    output_dir = Path(__file__).parent / "test_outputs"
+    output_dir.mkdir(exist_ok=True)
+    
+    filename = output_dir / f"noise_trader_{timestamp}_{safe_question}.txt"
+    
+    lines = []
+    lines.append("=" * 80)
+    lines.append("NOISE TRADER TEST RESULTS")
+    lines.append("=" * 80)
+    lines.append(f"Timestamp: {datetime.now().isoformat()}")
+    lines.append(f"Sphere: {sphere}")
+    lines.append(f"Question: {question}")
+    lines.append("")
+    
+    # Search query / keywords
+    if search_query:
+        lines.append("-" * 80)
+        lines.append("SEARCH QUERY (Keywords)")
+        lines.append("-" * 80)
+        lines.append(search_query)
+        lines.append("")
+    
+    # Tweets
+    lines.append("-" * 80)
+    lines.append("TWEETS")
+    lines.append("-" * 80)
+    if filtered_result and filtered_result.tweets:
+        lines.append(f"Total fetched: {filtered_result.total_tweets_analyzed}")
+        lines.append(f"Relevant: {filtered_result.relevant_tweet_count}")
+        lines.append("")
+        for i, tweet in enumerate(filtered_result.tweets, 1):
+            author = tweet.get("author", "unknown")
+            text = tweet.get("text", "")
+            likes = tweet.get("likes", 0)
+            rts = tweet.get("retweets", 0)
+            lines.append(f"[{i}] {author} ({likes} likes, {rts} RTs)")
+            lines.append(f"    {text}")
+            lines.append("")
+    else:
+        lines.append("No tweets found")
+    lines.append("")
+    
+    # Prediction results
+    lines.append("-" * 80)
+    lines.append("PREDICTION")
+    lines.append("-" * 80)
+    if result:
+        lines.append(f"Prediction: {result.get('prediction')}%")
+        lines.append(f"Signal: {result.get('signal')}")
+        lines.append(f"Confidence: {result.get('confidence', 0):.0%}")
+        lines.append(f"Tweets analyzed: {result.get('tweets_analyzed')}")
+        
+        # Reasoning if available
+        if result.get('reasoning'):
+            lines.append("")
+            lines.append("Reasoning:")
+            lines.append(result['reasoning'])
+        
+        # Factors if available
+        if result.get('factors'):
+            lines.append("")
+            lines.append("Factors:")
+            for factor in result['factors']:
+                lines.append(f"  - {factor}")
+    else:
+        lines.append("Prediction failed")
+    lines.append("")
+    
+    # Timing & tokens
+    lines.append("-" * 80)
+    lines.append("METRICS")
+    lines.append("-" * 80)
+    lines.append(f"Tweet search & filter: {search_time:.1f}s")
+    lines.append(f"Forecast generation: {forecast_time:.1f}s")
+    lines.append(f"Total time: {search_time + forecast_time:.1f}s")
+    lines.append(f"Tokens used: {tokens_used}")
+    lines.append("")
+    lines.append("=" * 80)
+    
+    # Write to file
+    with open(filename, "w") as f:
+        f.write("\n".join(lines))
+    
+    return filename
 
 
 async def test_noise_trader(
     sphere: str, 
     market_data: dict,
     use_semantic_filter: bool = True,
+    save_to_file: bool = False,
 ):
     """Test the NoiseTrader with a specific sphere and market data"""
     import time
@@ -93,7 +197,7 @@ async def test_noise_trader(
     question = market_data['market_topic']
     
     print("\n" + "=" * 60)
-    print(f"🤖 NOISE TRADER TEST")
+    print(f"NOISE TRADER TEST")
     print("=" * 60)
     print(f"Sphere: {sphere}")
     print(f"Mode: {mode}")
@@ -103,17 +207,16 @@ async def test_noise_trader(
     filter_config = SemanticFilterConfig(
         max_tweets_to_fetch=100,
         max_tweets_to_return=15,
-        min_relevance_score=0.3,
         lookback_days=7,
-        verified_only=False,  # Don't restrict - sphere filter handles quality
     )
     
     # Timing metrics
     search_time = 0.0
     forecast_time = 0.0
+    filtered_result = None
+    search_query = None
     
     # If using semantic filter, run it first to show tweets
-    filtered_result = None
     if use_semantic_filter:
         print("\n📡 FETCHING & FILTERING TWEETS...")
         search_start = time.perf_counter()
@@ -124,30 +227,25 @@ async def test_noise_trader(
             sphere=sphere,
         )
         
+        # Try to get the search query that was used
+        if hasattr(semantic_filter, '_last_search_query'):
+            search_query = semantic_filter._last_search_query
+        
         search_time = time.perf_counter() - search_start
         
-        # Show raw tweets fetched
-        print(f"\n📥 TWEETS FETCHED: {filtered_result.total_tweets_analyzed} (⏱️ {search_time:.1f}s)")
+        print(f"\n📥 TWEETS: {filtered_result.relevant_tweet_count}/{filtered_result.total_tweets_analyzed} relevant (⏱️ {search_time:.1f}s)")
         
-        if filtered_result.total_tweets_analyzed > 0:
-            # Show relevant tweets
-            if filtered_result.relevant_tweets:
-                print(f"\n✅ RELEVANT TWEETS ({len(filtered_result.relevant_tweets)}):")
-                print("-" * 50)
-                for i, tweet in enumerate(filtered_result.relevant_tweets, 1):
-                    # Format timestamp nicely
-                    timestamp = tweet.created_at[:16].replace("T", " ") if tweet.created_at else "unknown"
-                    print(f"\n[{i}] @{tweet.author}")
-                    print(f"    📅 {timestamp} | Relevance: {tweet.relevance_score:.0%} | ❤️ {tweet.likes} | 🔄 {tweet.retweets}")
-                    print(f"    \"{tweet.text[:200]}{'...' if len(tweet.text) > 200 else ''}\"")
-                    print(f"    → {tweet.relevance_reason}")
-            else:
-                print("\n⚠️  No tweets passed the relevance filter")
-            
-            print(f"\n📊 FILTER SUMMARY:")
-            print(f"   {filtered_result.summary}")
+        if filtered_result.tweets:
+            print(f"\n✅ RELEVANT TWEETS:")
+            print("-" * 50)
+            for i, tweet in enumerate(filtered_result.tweets, 1):
+                author = tweet.get("author", "unknown")
+                text = tweet.get("text", "")
+                likes = tweet.get("likes", 0)
+                rts = tweet.get("retweets", 0)
+                print(f"[{i}] {author} ({likes}L/{rts}RT): {text[:150]}...")
         else:
-            print("   No tweets found from this sphere on this topic")
+            print("   No relevant tweets found")
     
     # Create trader
     trader = NoiseTrader(
@@ -166,52 +264,16 @@ async def test_noise_trader(
         forecast_time = time.perf_counter() - forecast_start
         
         print("\n" + "=" * 60)
-        print(f"📊 SUPERFORECASTER PREDICTION ({sphere})")
+        print(f"📊 PREDICTION ({sphere})")
         print("=" * 60)
         
-        # Core prediction
-        print(f"\n🎯 FINAL PREDICTION: {result['prediction']}%")
-        print(f"📍 Baseline (Market): {result.get('baseline_probability', 50)}%")
-        print(f"🔄 Initial Estimate: {result.get('initial_probability', result['prediction'])}%")
-        print(f"📡 Sphere Signal: {result['signal']}")
-        print(f"📈 Tweets Analyzed: {result['tweets_analyzed']}")
+        # Core prediction (simplified output)
+        print(f"\n🎯 PREDICTION: {result['prediction']}%")
+        print(f"📡 Signal: {result['signal']}")
+        print(f"📈 Tweets analyzed: {result['tweets_analyzed']}")
         print(f"🔒 Confidence: {result['confidence']:.0%}")
         
-        # Key facts
-        if result.get('key_facts'):
-            print(f"\n📋 KEY FACTS:")
-            for i, fact in enumerate(result['key_facts'][:5], 1):
-                print(f"  {i}. {fact}")
-        
-        # Reasons NO
-        if result.get('reasons_no'):
-            print(f"\n🔴 REASONS FOR NO:")
-            for item in result['reasons_no'][:3]:
-                if isinstance(item, dict):
-                    print(f"  • [{item.get('strength', '?')}/10] {item.get('reason', item)}")
-                else:
-                    print(f"  • {item}")
-        
-        # Reasons YES
-        if result.get('reasons_yes'):
-            print(f"\n🟢 REASONS FOR YES:")
-            for item in result['reasons_yes'][:3]:
-                if isinstance(item, dict):
-                    print(f"  • [{item.get('strength', '?')}/10] {item.get('reason', item)}")
-                else:
-                    print(f"  • {item}")
-        
-        # Analysis
-        if result.get('analysis'):
-            print(f"\n🧠 ANALYSIS:")
-            print(f"  {result['analysis'][:500]}{'...' if len(result.get('analysis', '')) > 500 else ''}")
-        
-        # Reflection
-        if result.get('reflection'):
-            print(f"\n🔍 REFLECTION:")
-            print(f"  {result['reflection'][:300]}{'...' if len(result.get('reflection', '')) > 300 else ''}")
-        
-        # Timing & resource summary
+        # Timing summary
         print(f"\n⏱️  TIMING:")
         if search_time > 0:
             print(f"   Tweet search & filter: {search_time:.1f}s")
@@ -219,6 +281,20 @@ async def test_noise_trader(
         print(f"   Total:                 {search_time + forecast_time:.1f}s")
         print(f"\n💰 Tokens used: {trader.tokens_used}")
         print("=" * 60)
+        
+        # Save to file if requested
+        if save_to_file:
+            filename = save_results_to_file(
+                sphere=sphere,
+                question=question,
+                filtered_result=filtered_result,
+                result=result,
+                search_time=search_time,
+                forecast_time=forecast_time,
+                tokens_used=trader.tokens_used,
+                search_query=search_query,
+            )
+            print(f"\n💾 Results saved to: {filename}")
         
         return result
         
@@ -259,6 +335,11 @@ def parse_args():
         action="store_true",
         help="Use tool-based mode instead of semantic filter"
     )
+    parser.add_argument(
+        "--save", "-s",
+        action="store_true",
+        help="Save results (tweets, keywords, prediction) to a text file in scripts/test_outputs/"
+    )
     return parser.parse_args()
 
 
@@ -294,6 +375,7 @@ async def main():
         sphere=args.sphere,
         market_data=market_data,
         use_semantic_filter=not args.no_semantic_filter,
+        save_to_file=args.save,
     )
 
 

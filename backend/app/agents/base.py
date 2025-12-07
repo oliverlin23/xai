@@ -5,7 +5,7 @@ CRITICAL: All agents inherit from this class
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Callable
 from pydantic import BaseModel
-from app.services.grok import GrokService
+from app.services.grok import GrokService, GROK_MODEL_REASONING
 from app.core.logging_config import get_logger, get_agent_logger
 import asyncio
 import time
@@ -33,10 +33,10 @@ class BaseAgent(ABC):
         output_schema: type[BaseModel],
         max_retries: int = 3,
         timeout_seconds: int = 300,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        grok_model: Optional[str] = None,
     ):
         logger.info(f"[BASE AGENT] Initializing {agent_name} (phase: {phase})")
-        logger.info(f"[BASE AGENT] Creating GrokService instance")
         self.agent_name = agent_name
         self.phase = phase
         self.system_prompt = system_prompt
@@ -51,8 +51,8 @@ class BaseAgent(ABC):
         else:
             self.agent_logger = logger
         
-        self.grok_service = GrokService()
-        logger.info(f"[BASE AGENT] GrokService created, model: {self.grok_service.model}")
+        self.grok_service = GrokService(model=grok_model)
+        logger.info(f"[BASE AGENT] GrokService model: {self.grok_service.model}")
         self.agent_logger.info(f"[{agent_name}] GrokService initialized, model: {self.grok_service.model}")
 
         self.tokens_used = 0

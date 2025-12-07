@@ -32,7 +32,7 @@ from x_search.tool import XSearchConfig
 from app.noise_traders.semantic_filter import (
     SemanticFilter,
     SemanticFilterConfig,
-    SemanticFilterOutput,
+    FullSemanticFilterOutput,
 )
 
 
@@ -256,7 +256,7 @@ class NoiseTrader(BaseAgent):
     async def build_user_message(
         self, 
         input_data: Dict[str, Any],
-        filtered_tweets: SemanticFilterOutput | None = None,
+        filtered_tweets: FullSemanticFilterOutput | None = None,
     ) -> str:
         """
         Build user message in superforecaster format
@@ -301,10 +301,10 @@ class NoiseTrader(BaseAgent):
         market_data_text = self._format_market_data(order_book, recent_trades)
         
         # Format background information from semantic filter
-        if filtered_tweets and filtered_tweets.relevant_tweets:
+        if filtered_tweets and filtered_tweets.tweets:
             background_info = self._format_background_info(filtered_tweets)
         else:
-            background_info = "No relevant tweets found from the monitored community. Limited background information available."
+            background_info = "No relevant tweets found from the monitored sphere. Limited background information available."
         
         # Current date
         current_date = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -382,25 +382,24 @@ Please provide your forecast following the structured format:
         
         return "\n".join(lines) if lines else "No market data available."
 
-    def _format_background_info(self, filtered: SemanticFilterOutput) -> str:
+    def _format_background_info(self, filtered: FullSemanticFilterOutput) -> str:
         """Format filtered tweets as background information"""
         lines = []
         
         # Summary
-        lines.append(f"SUMMARY: {filtered.summary}")
         lines.append(f"Tweets Analyzed: {filtered.total_tweets_analyzed} total, {filtered.relevant_tweet_count} relevant")
         lines.append("")
         
         # Individual tweets
-        lines.append("RELEVANT TWEETS:")
-        for i, tweet in enumerate(filtered.relevant_tweets, 1):
-            signal_str = tweet.signal.upper()
-            lines.append(
-                f"\n[{i}] {tweet.author} | Relevance: {tweet.relevance_score:.0%} | Signal: {signal_str}"
-            )
-            lines.append(f"    \"{tweet.text[:300]}{'...' if len(tweet.text) > 300 else ''}\"")
-            lines.append(f"    Engagement: ❤️ {tweet.likes} 🔄 {tweet.retweets}")
-            lines.append(f"    Why relevant: {tweet.relevance_reason}")
+        lines.append("RELEVANT TWEETS (ordered by relevance):")
+        for i, tweet in enumerate(filtered.tweets, 1):
+            author = tweet.get("author", "unknown")
+            text = tweet.get("text", "")
+            likes = tweet.get("likes", 0)
+            retweets = tweet.get("retweets", 0)
+            
+            lines.append(f"\n[{i}] {author} | ❤️ {likes} | 🔄 {retweets}")
+            lines.append(f"    \"{text[:300]}{'...' if len(text) > 300 else ''}\"")
         
         return "\n".join(lines)
 
