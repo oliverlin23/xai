@@ -10,7 +10,7 @@ Notes are persisted in trader_state_live.system_prompt for continuity across rou
 """
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
-from app.superforecaster.base import BaseAgent
+from app.agents.base import BaseAgent
 from app.core.config import get_settings
 from app.db.repositories import TraderRepository
 from datetime import datetime, timedelta, UTC
@@ -32,7 +32,7 @@ from x_search.communities import SPHERES, get_sphere, get_sphere_names
 from x_search.tool import XSearchConfig
 
 # Import semantic filter
-from app.traders.semantic_filter import (
+from app.agents.traders.semantic_filter import (
     SemanticFilter,
     SemanticFilterConfig,
     FullSemanticFilterOutput,

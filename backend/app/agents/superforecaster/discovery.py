@@ -4,7 +4,7 @@ Each agent discovers up to 5 factors independently with diverse perspectives
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
-from app.agents.prompts import get_discovery_prompt
+from app.agents.superforecaster.prompts import get_discovery_prompt
 from app.schemas import FactorDiscoveryOutput
 
 

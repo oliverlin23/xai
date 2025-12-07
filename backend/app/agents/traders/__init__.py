@@ -7,13 +7,13 @@ Available agents:
 - FundamentalTrader: Trades on market data and prior reasoning only (no X API)
 """
 
-from app.traders.noise_agent import (
+from app.agents.traders.noise_agent import (
     NoiseTrader,
     NoiseAgent,  # Backwards compatibility alias
     NoiseTraderOutput,
     create_noise_trader,
 )
-from app.traders.user_agent import (
+from app.agents.traders.user_agent import (
     UserAgent,
     UserAgentOutput,
     UserAccountFilter,
@@ -21,14 +21,14 @@ from app.traders.user_agent import (
     create_user_agent,
     get_user_agent_names,
 )
-from app.traders.fundamental_agent import (
+from app.agents.traders.fundamental_agent import (
     FundamentalTrader,
     FundamentalAgent,  # Backwards compatibility alias
     FundamentalTraderOutput,
     FUNDAMENTAL_TRADER_TYPES,
     get_fundamental_trader_names,
 )
-from app.traders.semantic_filter import (
+from app.agents.traders.semantic_filter import (
     SemanticFilter,
     SemanticFilterConfig,
     SemanticFilterOutput,

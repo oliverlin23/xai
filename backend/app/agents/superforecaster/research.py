@@ -4,7 +4,7 @@ Phase 3: Research Agents (Agents 14-23)
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
-from app.agents.prompts import (
+from app.agents.superforecaster.prompts import (
     HISTORICAL_RESEARCH_PROMPT,
     CURRENT_DATA_RESEARCH_PROMPT
 )

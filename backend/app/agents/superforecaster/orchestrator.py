@@ -5,7 +5,7 @@ CRITICAL: Coordinates all 24 agents through 4 phases
 from typing import Dict, Any, List, Optional
 from app.db import SessionRepository, AgentLogRepository, FactorRepository
 from app.db.repositories import ForecasterResponseRepository
-from app.agents import (
+from app.agents.superforecaster import (
     DiscoveryAgent,
     ValidatorAgent,
     RatingConsensusAgent,
@@ -40,7 +40,7 @@ class AgentOrchestrator:
         self.question_text = question_text
         
         # Forecaster class configuration
-        from app.agents.prompts import FORECASTER_CLASSES
+        from app.agents.superforecaster.prompts import FORECASTER_CLASSES
         if forecaster_class not in FORECASTER_CLASSES:
             logger.warning(f"[ORCHESTRATOR] Unknown forecaster_class '{forecaster_class}', defaulting to 'balanced'")
             forecaster_class = "balanced"
@@ -274,7 +274,7 @@ class AgentOrchestrator:
             
             try:
                 logger.info(f"[PHASE 1] Initializing DiscoveryAgent({agent_num})")
-                logger.info(f"[PHASE 1] Importing from app.agents.discovery")
+                logger.info(f"[PHASE 1] Importing from app.agents.superforecaster.discovery")
                 agent = DiscoveryAgent(agent_num, session_id=self.session_id)
                 
                 logger.info(f"[PHASE 1] Executing {agent_name}")

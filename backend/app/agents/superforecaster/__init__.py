@@ -1,15 +1,15 @@
 """
 Agent implementations
 """
-from app.agents.discovery import DiscoveryAgent
-from app.agents.validation import (
+from app.agents.superforecaster.discovery import DiscoveryAgent
+from app.agents.superforecaster.validation import (
     ValidatorAgent, 
     RaterAgent, 
     ConsensusAgent,
     RatingConsensusAgent  # Merged agent (recommended)
 )
-from app.agents.research import HistoricalResearchAgent, CurrentDataResearchAgent
-from app.agents.synthesis import SynthesisAgent
+from app.agents.superforecaster.research import HistoricalResearchAgent, CurrentDataResearchAgent
+from app.agents.superforecaster.synthesis import SynthesisAgent
 
 __all__ = [
     "DiscoveryAgent",

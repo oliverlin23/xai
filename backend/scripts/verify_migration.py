@@ -79,7 +79,7 @@ def verify_code_updates():
     
     # Check orchestrator
     try:
-        from app.agents.orchestrator import AgentOrchestrator
+        from app.agents.superforecaster.orchestrator import AgentOrchestrator
         import inspect
         
         sig = inspect.signature(AgentOrchestrator.update_session_status)

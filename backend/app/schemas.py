@@ -2,12 +2,23 @@
 Pydantic schemas for request/response validation
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from decimal import Decimal
 
 
-# Agent Output Schemas
+# =============================================================================
+# ENUMS / LITERALS (matching DB enums)
+# =============================================================================
+
+TraderType = Literal["fundamental", "noise", "user"]
+OrderSide = Literal["buy", "sell"]
+OrderStatus = Literal["open", "filled", "partially_filled", "cancelled"]
+
+
+# =============================================================================
+# Agent Output Schemas (for LLM structured output)
+# =============================================================================
 class FactorDiscoveryOutput(BaseModel):
     """Output schema for discovery agents (Phase 1)"""
     factors: List[Dict[str, str]] = Field(
@@ -124,4 +135,96 @@ class ForecastResponse(BaseModel):
     confidence: Optional[float] = None
     total_duration_seconds: Optional[float] = None
     total_duration_formatted: Optional[str] = None
-    forecaster_responses: Optional[List[Dict[str, Any]]] = None
+    forecaster_responses: Optional[List["ForecasterResponseSchema"]] = None
+
+
+# =============================================================================
+# Forecaster Response Schemas
+# =============================================================================
+
+class ForecasterResponseSchema(BaseModel):
+    """Schema for individual forecaster response"""
+    id: str
+    session_id: str
+    forecaster_class: str  # 'conservative', 'momentum', 'historical', 'realtime', 'balanced'
+    prediction_result: Optional[Dict[str, Any]] = None
+    prediction_probability: Optional[float] = None
+    confidence: Optional[float] = None
+    total_duration_seconds: Optional[float] = None
+    total_duration_formatted: Optional[str] = None
+    phase_durations: Optional[Dict[str, Any]] = None
+    status: str = "running"
+    error_message: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+# =============================================================================
+# Trading Schemas
+# =============================================================================
+
+class TraderStateSchema(BaseModel):
+    """Schema for trader state (trader_state_live table)"""
+    id: str
+    session_id: str
+    trader_type: TraderType
+    name: str
+    system_prompt: Optional[str] = None
+    position: int = 0
+    pnl: float = 0.0
+    updated_at: Optional[datetime] = None
+
+
+class TradeSchema(BaseModel):
+    """Schema for a trade (trades table)"""
+    id: str
+    session_id: str
+    buyer_name: str
+    seller_name: str
+    price: int  # 0-100
+    quantity: int
+    created_at: datetime
+
+
+class OrderSchema(BaseModel):
+    """Schema for an order (orderbook_live / orderbook_history)"""
+    id: str
+    session_id: str
+    trader_name: str
+    side: OrderSide
+    price: int  # 0-100
+    quantity: int
+    filled_quantity: int = 0
+    status: OrderStatus
+    created_at: datetime
+
+
+class OrderBookSnapshot(BaseModel):
+    """Snapshot of current order book state"""
+    bids: List[OrderSchema]
+    asks: List[OrderSchema]
+
+
+# =============================================================================
+# API Request/Response Schemas
+# =============================================================================
+
+class RunSessionRequest(BaseModel):
+    """Request to start a trading simulation session"""
+    question_text: str
+    question_type: str = "binary"
+
+
+class SimulationStatusResponse(BaseModel):
+    """Response for simulation status check"""
+    session_id: str
+    phase: str  # 'initializing', 'running', 'stopped'
+    round_number: Optional[int] = None
+    is_running: bool = False
+
+
+class StopSimulationResponse(BaseModel):
+    """Response after stopping simulation"""
+    session_id: str
+    message: str
+    final_round: Optional[int] = None

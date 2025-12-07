@@ -4,7 +4,7 @@ Combines all research into final prediction
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
-from app.agents.prompts import get_synthesis_prompt, FORECASTER_CLASSES
+from app.agents.superforecaster.prompts import get_synthesis_prompt, FORECASTER_CLASSES
 from app.schemas import PredictionOutput
 
 

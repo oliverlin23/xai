@@ -4,7 +4,7 @@ Sequential agents: Validator → RaterConsensus (merged)
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
-from app.agents.prompts import (
+from app.agents.superforecaster.prompts import (
     VALIDATOR_AGENT_PROMPT,
     RATER_AGENT_PROMPT,
     CONSENSUS_AGENT_PROMPT,

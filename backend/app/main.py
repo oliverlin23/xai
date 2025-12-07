@@ -8,7 +8,7 @@ from typing import List, Optional, Dict
 from datetime import datetime
 import uuid
 from app.db import SessionRepository
-from app.agents.orchestrator import AgentOrchestrator
+from app.agents.superforecaster.orchestrator import AgentOrchestrator
 from app.core.logging_config import get_logger
 import asyncio
 
@@ -94,7 +94,7 @@ async def run_orchestrator(session_id: str, question_text: str, agent_counts: Op
 
 async def run_all_forecasters(session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None):
     """Run all 5 forecaster personalities in parallel for a session"""
-    from app.agents.prompts import FORECASTER_CLASSES
+    from app.agents.superforecaster.prompts import FORECASTER_CLASSES
     
     forecaster_classes = list(FORECASTER_CLASSES.keys())  # ['conservative', 'momentum', 'historical', 'realtime', 'balanced']
     logger.info(f"[BACKGROUND TASK] Running all {len(forecaster_classes)} forecaster classes in parallel for session {session_id}")
@@ -132,7 +132,7 @@ async def create_forecast(request: ForecastRequest, background_tasks: Background
     logger.info(f"Run all forecasters: {request.run_all_forecasters}")
     
     # Validate forecaster_class if not running all
-    from app.agents.prompts import FORECASTER_CLASSES
+    from app.agents.superforecaster.prompts import FORECASTER_CLASSES
     if not request.run_all_forecasters:
         if request.forecaster_class not in FORECASTER_CLASSES:
             logger.warning(f"Invalid forecaster_class '{request.forecaster_class}', defaulting to 'balanced'")
@@ -342,7 +342,7 @@ async def run_trading_simulation_background(
     import re
     from app.db.repositories import ForecasterResponseRepository, TraderRepository
     from app.market import SupabaseMarketMaker
-    from app.traders.simulation import TradingSimulation, register_simulation, unregister_simulation
+    from app.agents.traders.simulation import TradingSimulation, register_simulation, unregister_simulation
     
     logger.info(f"[BACKGROUND] Starting trading simulation for session {session_id}")
     
@@ -492,7 +492,7 @@ async def run_trading_simulation_background(
     finally:
         # Clean up both registries
         unregister_simulation(session_id)
-        from app.traders.simulation import clear_session_initializing
+        from app.agents.traders.simulation import clear_session_initializing
         clear_session_initializing(session_id)
         logger.info(f"[BACKGROUND] Trading simulation ended for session {session_id}")
 
@@ -644,7 +644,7 @@ async def run_session(request: RunSessionRequest, background_tasks: BackgroundTa
     
     # Mark session as initializing BEFORE starting background task
     # This ensures status endpoint returns "initializing" immediately
-    from app.traders.simulation import mark_session_initializing
+    from app.agents.traders.simulation import mark_session_initializing
     mark_session_initializing(session_id)
     
     # Start trading simulation in background
@@ -699,7 +699,7 @@ async def get_simulation_status(session_id: str):
     - "running": Trading simulation is active
     - "stopped": Simulation has stopped or completed
     """
-    from app.traders.simulation import get_simulation, is_session_initializing
+    from app.agents.traders.simulation import get_simulation, is_session_initializing
     from app.db.repositories import ForecasterResponseRepository
     
     simulation = get_simulation(session_id)
@@ -778,7 +778,7 @@ async def stop_simulation(session_id: str):
     """
     Stop a running trading simulation.
     """
-    from app.traders.simulation import get_simulation
+    from app.agents.traders.simulation import get_simulation
     
     simulation = get_simulation(session_id)
     

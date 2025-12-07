@@ -52,8 +52,8 @@ from dotenv import load_dotenv
 # Load env from project root
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-from app.traders.user_agent import UserAgent, USER_ACCOUNT_MAPPINGS, get_user_agent_names
-from app.market.client import SupabaseMarketMaker
+from app.agents.traders.user_agent import UserAgent, USER_ACCOUNT_MAPPINGS, get_user_agent_names
+from app.services.market.client import SupabaseMarketMaker
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -68,7 +68,7 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("httpcore").setLevel(logging.ERROR)
 logging.getLogger("app.agents.base").setLevel(logging.WARNING)
 logging.getLogger("app.services.grok").setLevel(logging.WARNING)
-logging.getLogger("app.traders.user_agent").setLevel(logging.WARNING)
+logging.getLogger("app.agents.traders.user_agent").setLevel(logging.WARNING)
 logging.getLogger("x_search").setLevel(logging.WARNING)
 
 
@@ -634,7 +634,7 @@ async def main():
         logging.getLogger("httpx").setLevel(logging.INFO)
         logging.getLogger("app.agents.base").setLevel(logging.INFO)
         logging.getLogger("app.services.grok").setLevel(logging.INFO)
-        logging.getLogger("app.traders.user_agent").setLevel(logging.INFO)
+        logging.getLogger("app.agents.traders.user_agent").setLevel(logging.INFO)
         logging.getLogger("x_search").setLevel(logging.INFO)
     
     # Check for required env vars

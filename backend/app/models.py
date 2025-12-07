@@ -50,10 +50,29 @@ class Session(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     question_text = Column(Text, nullable=False)
     question_type = Column(String(50), nullable=False, default="binary")
+    status = Column(String(50), nullable=False, default="running")  # running, completed, failed
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
+    started_at = Column(TIMESTAMPTZ)
+    completed_at = Column(TIMESTAMPTZ)
+
+
+class ForecasterResponse(Base):
+    """Individual forecaster response for a session"""
+    __tablename__ = "forecaster_responses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False)
+    forecaster_class = Column(String(50), nullable=False)  # e.g., 'conservative', 'momentum'
+    prediction_result = Column(JSONB)  # Full prediction output
+    prediction_probability = Column(DECIMAL(5, 4))  # 0.0-1.0
+    confidence = Column(DECIMAL(5, 4))  # 0.0-1.0
+    total_duration_seconds = Column(DECIMAL(10, 2))
+    total_duration_formatted = Column(String(50))
+    phase_durations = Column(JSONB)
     status = Column(String(50), nullable=False, default="running")
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
-    started_at = Column(TIMESTAMP)
-    completed_at = Column(TIMESTAMP)
+    error_message = Column(Text)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
+    completed_at = Column(TIMESTAMPTZ)
 
 
 class AgentLog(Base):
@@ -68,8 +87,8 @@ class AgentLog(Base):
     output_data = Column(JSONB)
     error_message = Column(Text)
     tokens_used = Column(Integer, default=0)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
-    completed_at = Column(TIMESTAMP)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
+    completed_at = Column(TIMESTAMPTZ)
 
 
 class Factor(Base):
@@ -83,7 +102,7 @@ class Factor(Base):
     category = Column(String(100))
     importance_score = Column(DECIMAL(4, 2))
     research_summary = Column(Text)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
 
 
 # =============================================================================
@@ -101,7 +120,7 @@ class TraderStateLive(Base):
     system_prompt = Column(Text)
     position = Column(Integer, nullable=False, default=0)
     pnl = Column(DECIMAL(12, 2), nullable=False, default=0)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow)
+    updated_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
 
 
 class TraderPromptsHistory(Base):
@@ -114,7 +133,7 @@ class TraderPromptsHistory(Base):
     name = Column(String(50), nullable=False)
     prompt_number = Column(Integer, nullable=False)
     system_prompt = Column(Text, nullable=False)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
 
 
 class OrderBookLive(Base):
@@ -125,11 +144,11 @@ class OrderBookLive(Base):
     session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False)
     trader_name = Column(String(50), nullable=False)
     side = Column(SQLEnum(OrderSideEnum, name="order_side", create_type=False), nullable=False)
-    price = Column(Integer, nullable=False)
+    price = Column(Integer, nullable=False)  # 0-100
     quantity = Column(Integer, nullable=False, default=1)
     filled_quantity = Column(Integer, nullable=False, default=0)
     status = Column(SQLEnum(OrderStatusEnum, name="order_status", create_type=False), nullable=False, default=OrderStatusEnum.OPEN)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
 
 
 class OrderBookHistory(Base):
@@ -140,11 +159,11 @@ class OrderBookHistory(Base):
     session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False)
     trader_name = Column(String(50), nullable=False)
     side = Column(SQLEnum(OrderSideEnum, name="order_side", create_type=False), nullable=False)
-    price = Column(Integer, nullable=False)
+    price = Column(Integer, nullable=False)  # 0-100
     quantity = Column(Integer, nullable=False)
     filled_quantity = Column(Integer, nullable=False, default=0)
     status = Column(SQLEnum(OrderStatusEnum, name="order_status", create_type=False), nullable=False)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)
 
 
 class Trade(Base):
@@ -157,4 +176,4 @@ class Trade(Base):
     seller_name = Column(String(50), nullable=False)
     price = Column(Integer, nullable=False)
     quantity = Column(Integer, nullable=False)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    created_at = Column(TIMESTAMPTZ, default=datetime.utcnow)

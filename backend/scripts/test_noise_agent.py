@@ -48,8 +48,8 @@ from dotenv import load_dotenv
 # Load env from project root
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-from app.traders.noise_agent import NoiseTrader
-from app.traders.semantic_filter import SemanticFilterConfig
+from app.agents.traders.noise_agent import NoiseTrader
+from app.agents.traders.semantic_filter import SemanticFilterConfig
 from app.market import SupabaseMarketMaker
 
 logging.basicConfig(
@@ -65,8 +65,8 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("httpcore").setLevel(logging.ERROR)
 logging.getLogger("app.agents.base").setLevel(logging.WARNING)
 logging.getLogger("app.services.grok").setLevel(logging.WARNING)
-logging.getLogger("app.traders.noise_agent").setLevel(logging.WARNING)
-logging.getLogger("app.traders.semantic_filter").setLevel(logging.WARNING)
+logging.getLogger("app.agents.traders.noise_agent").setLevel(logging.WARNING)
+logging.getLogger("app.agents.traders.semantic_filter").setLevel(logging.WARNING)
 logging.getLogger("x_search").setLevel(logging.WARNING)
 
 
@@ -352,7 +352,7 @@ async def test_single_sphere(
 ):
     """Test a single sphere (original behavior)"""
     import time
-    from app.traders.semantic_filter import SemanticFilter
+    from app.agents.traders.semantic_filter import SemanticFilter
     
     question = market_data['market_topic']
     
@@ -677,8 +677,8 @@ async def main():
         logging.getLogger("httpx").setLevel(logging.INFO)
         logging.getLogger("app.agents.base").setLevel(logging.INFO)
         logging.getLogger("app.services.grok").setLevel(logging.INFO)
-        logging.getLogger("app.traders.noise_agent").setLevel(logging.INFO)
-        logging.getLogger("app.traders.semantic_filter").setLevel(logging.INFO)
+        logging.getLogger("app.agents.traders.noise_agent").setLevel(logging.INFO)
+        logging.getLogger("app.agents.traders.semantic_filter").setLevel(logging.INFO)
         logging.getLogger("x_search").setLevel(logging.INFO)
     
     # Check for required env vars

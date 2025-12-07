@@ -49,12 +49,12 @@ from dotenv import load_dotenv
 # Load env from project root
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-from app.traders.fundamental_agent import (
+from app.agents.traders.fundamental_agent import (
     FundamentalTrader,
     FUNDAMENTAL_TRADER_TYPES,
     get_fundamental_trader_names,
 )
-from app.market.client import SupabaseMarketMaker
+from app.services.market.client import SupabaseMarketMaker
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -69,7 +69,7 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("httpcore").setLevel(logging.ERROR)
 logging.getLogger("app.agents.base").setLevel(logging.WARNING)
 logging.getLogger("app.services.grok").setLevel(logging.WARNING)
-logging.getLogger("app.traders.fundamental_agent").setLevel(logging.WARNING)
+logging.getLogger("app.agents.traders.fundamental_agent").setLevel(logging.WARNING)
 
 
 # Sample market data for testing
@@ -541,7 +541,7 @@ async def main():
         logging.getLogger("httpx").setLevel(logging.INFO)
         logging.getLogger("app.agents.base").setLevel(logging.INFO)
         logging.getLogger("app.services.grok").setLevel(logging.INFO)
-        logging.getLogger("app.traders.fundamental_agent").setLevel(logging.INFO)
+        logging.getLogger("app.agents.traders.fundamental_agent").setLevel(logging.INFO)
     
     # Check for required env vars
     if not os.getenv("GROK_API_KEY"):

@@ -13,7 +13,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db import SessionRepository
-from app.agents.orchestrator import AgentOrchestrator
+from app.agents.superforecaster.orchestrator import AgentOrchestrator
 from app.services.grok import GrokService
 from app.schemas import PredictionOutput
 from app.core.logging_config import get_logger

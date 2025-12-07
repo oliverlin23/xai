@@ -15,7 +15,7 @@ import tweepy
 from tweepy.asynchronous import AsyncStreamingClient
 
 from app.core.config import get_settings
-from app.traders.user_agent import UserAgent, UserAgentOutput
+from app.agents.traders.user_agent import UserAgent, UserAgentOutput
 
 logger = logging.getLogger(__name__)
 

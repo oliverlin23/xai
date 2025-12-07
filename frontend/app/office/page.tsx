@@ -590,6 +590,8 @@ function OfficePageContent() {
   }, [sessionId])
 
   // Handle query param - use module-level tracking to survive Strict Mode remounts
+  // DO NOT reset startedSimulationQuery on unmount - Strict Mode unmounts/remounts
+  // and we need to prevent the second mount from starting another simulation
   useEffect(() => {
     const query = searchParams.get("q")
     // Only start if: query exists, no session yet, and this query hasn't already started
@@ -598,13 +600,6 @@ function OfficePageContent() {
       startSimulation(query)
     }
   }, [searchParams, sessionId, startSimulation])
-
-  // Reset module-level tracking when component unmounts (page navigation)
-  useEffect(() => {
-    return () => {
-      startedSimulationQuery = null
-    }
-  }, [])
 
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center relative overflow-hidden font-pixel">
