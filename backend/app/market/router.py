@@ -6,6 +6,7 @@ Simplified: session-based orderbook for probability trading.
 
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List
+from decimal import Decimal
 
 from .models import Order, OrderSide as ModelOrderSide
 from .orderbook import OrderBook
@@ -15,11 +16,15 @@ from .schemas import (
     OrderResponse,
     TradeResponse,
     TraderStateResponse,
+    TraderProfileResponse,
     OrderBookResponse,
     OrderBookLevel,
     CreateOrderResponse,
     OrderSide,
+    TraderType,
 )
+from .trader_profiles import get_trader_description, get_trader_display_name, get_trader_role
+from app.db.repositories import TraderRepository
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
 
@@ -150,6 +155,61 @@ async def get_order(session_id: str, order_id: str):
 
 # ============ Trader Endpoints ============
 
+# IMPORTANT: More specific routes must come before more general ones
+# /profiles must come before /{trader_name} to avoid route conflicts
+
+@router.get("/{session_id}/traders/profiles", response_model=List[TraderProfileResponse])
+async def list_trader_profiles(session_id: str):
+    """
+    List all traders in a session with their profiles and descriptions.
+    Fetches from database (trader_state_live table).
+    """
+    trader_repo = TraderRepository()
+    traders = trader_repo.get_session_traders(session_id)
+    
+    profiles = []
+    for trader in traders:
+        trader_name = trader.get("name")
+        system_prompt = trader.get("system_prompt")
+        
+        description = get_trader_description(trader_name, system_prompt)
+        display_name = get_trader_display_name(trader_name)
+        role = get_trader_role(trader_name)
+        
+        profiles.append(TraderProfileResponse(
+            session_id=trader.get("session_id", session_id),
+            trader_type=TraderType(trader.get("trader_type", "fundamental")),
+            name=trader_name,
+            display_name=display_name,
+            description=description,
+            role=role,
+            position=int(trader.get("position", 0)),
+            cash=Decimal(str(trader.get("cash", 1000.00))),
+            pnl=Decimal(str(trader.get("pnl", 0))),
+            system_prompt=system_prompt,
+        ))
+    
+    return profiles
+
+
+@router.get("/{session_id}/traders", response_model=List[TraderStateResponse])
+async def list_trader_states(session_id: str):
+    """List all trader states in a session."""
+    ob = get_or_create_orderbook(session_id)
+    
+    return [
+        TraderStateResponse(
+            session_id=state.session_id,
+            trader_type=state.trader_type,
+            name=state.name,
+            position=state.position,
+            cash=state.cash,
+            pnl=state.pnl,
+        )
+        for state in ob.trader_states.values()
+    ]
+
+
 @router.get("/{session_id}/traders/{trader_name}", response_model=TraderStateResponse)
 async def get_trader_state(session_id: str, trader_name: str):
     """Get a trader's state (position, cash, P&L)."""
@@ -172,24 +232,6 @@ async def get_trader_orders(session_id: str, trader_name: str, active_only: bool
     ob = get_or_create_orderbook(session_id)
     orders = ob.get_trader_orders(trader_name, active_only=active_only)
     return [_order_to_response(o) for o in orders]
-
-
-@router.get("/{session_id}/traders", response_model=List[TraderStateResponse])
-async def list_trader_states(session_id: str):
-    """List all trader states in a session."""
-    ob = get_or_create_orderbook(session_id)
-    
-    return [
-        TraderStateResponse(
-            session_id=state.session_id,
-            trader_type=state.trader_type,
-            name=state.name,
-            position=state.position,
-            cash=state.cash,
-            pnl=state.pnl,
-        )
-        for state in ob.trader_states.values()
-    ]
 
 
 # ============ Trade Endpoints ============

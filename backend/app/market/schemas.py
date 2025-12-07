@@ -84,6 +84,20 @@ class TraderStateResponse(BaseModel):
     pnl: Decimal
 
 
+class TraderProfileResponse(BaseModel):
+    """Trader profile with description and display info."""
+    session_id: str
+    trader_type: TraderType
+    name: str
+    display_name: str
+    description: str
+    role: str
+    position: int
+    cash: Decimal
+    pnl: Decimal
+    system_prompt: Optional[str] = None
+
+
 class OrderBookLevel(BaseModel):
     """Single price level in order book."""
     price: int

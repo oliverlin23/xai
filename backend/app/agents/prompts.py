@@ -52,6 +52,105 @@ QUALITY CHECK:
 - Low redundancy between factors"""
 
 
+# ============ DIVERSE DISCOVERY AGENT PERSPECTIVES ============
+# Different discovery agents use different perspectives to increase diversity
+
+DISCOVERY_PERSPECTIVES = {
+    "economic": {
+        "name": "Economic & Financial Analyst",
+        "focus": "Focus on economic indicators, monetary policy, fiscal policy, market conditions, financial flows, and macroeconomic trends. Look for factors like interest rates, inflation, GDP growth, employment data, currency movements, and financial market dynamics.",
+        "temperature": 0.75
+    },
+    "political": {
+        "name": "Political & Geopolitical Analyst",
+        "focus": "Focus on political developments, policy changes, regulatory shifts, elections, geopolitical tensions, international relations, and government actions. Look for factors like legislation, executive orders, diplomatic relations, trade policies, and political stability.",
+        "temperature": 0.8
+    },
+    "social": {
+        "name": "Social & Cultural Analyst",
+        "focus": "Focus on social trends, cultural shifts, demographic changes, public opinion, social movements, behavioral patterns, and societal factors. Look for factors like demographic trends, social media sentiment, cultural movements, public health trends, and social cohesion.",
+        "temperature": 0.85
+    },
+    "technological": {
+        "name": "Technology & Innovation Analyst",
+        "focus": "Focus on technological developments, innovation, digital transformation, infrastructure, technical capabilities, and tech industry dynamics. Look for factors like breakthrough technologies, platform changes, infrastructure developments, and tech adoption rates.",
+        "temperature": 0.8
+    },
+    "historical": {
+        "name": "Historical Pattern Analyst",
+        "focus": "Focus on historical precedents, long-term patterns, base rates, cyclical trends, and analogies to past events. Look for factors based on historical data, similar past situations, long-term trends, and pattern recognition.",
+        "temperature": 0.7
+    },
+    "market": {
+        "name": "Market & Industry Specialist",
+        "focus": "Focus on industry-specific dynamics, market conditions, competitive landscape, supply chains, and sector-specific factors. Look for factors like industry trends, market share shifts, competitive actions, supply chain disruptions, and sector performance.",
+        "temperature": 0.75
+    },
+    "environmental": {
+        "name": "Environmental & Risk Analyst",
+        "focus": "Focus on environmental factors, natural events, climate patterns, resource availability, and external risk factors. Look for factors like weather patterns, natural disasters, resource constraints, environmental regulations, and climate-related impacts.",
+        "temperature": 0.75
+    },
+    "structural": {
+        "name": "Structural & Long-term Analyst",
+        "focus": "Focus on structural factors, systemic changes, long-term trends, fundamental shifts, and deep underlying causes. Look for factors that represent fundamental changes in systems, institutions, or long-term structural trends.",
+        "temperature": 0.7
+    },
+    "momentum": {
+        "name": "Momentum & Short-term Analyst",
+        "focus": "Focus on recent developments, emerging trends, short-term momentum, breaking news, and immediate catalysts. Look for factors based on recent events, emerging patterns, short-term momentum indicators, and immediate triggers.",
+        "temperature": 0.9
+    },
+    "contrarian": {
+        "name": "Contrarian & Edge Case Analyst",
+        "focus": "Focus on overlooked factors, edge cases, counterintuitive mechanisms, and factors that others might miss. Look for non-obvious factors, contrarian perspectives, edge cases, and factors that challenge conventional wisdom.",
+        "temperature": 0.85
+    }
+}
+
+
+def get_discovery_prompt(agent_number: int) -> tuple[str, float]:
+    """
+    Get discovery prompt and temperature for a specific agent number.
+    
+    Cycles through different perspectives to ensure diversity across agents.
+    
+    Args:
+        agent_number: 1-indexed agent number
+        
+    Returns:
+        Tuple of (prompt_string, temperature)
+    """
+    # Cycle through perspectives based on agent number
+    perspective_keys = list(DISCOVERY_PERSPECTIVES.keys())
+    perspective_index = (agent_number - 1) % len(perspective_keys)
+    perspective_key = perspective_keys[perspective_index]
+    perspective = DISCOVERY_PERSPECTIVES[perspective_key]
+    
+    # Build prompt with perspective-specific focus
+    base_prompt = DISCOVERY_AGENT_PROMPT
+    
+    # Add perspective-specific guidance
+    perspective_guidance = f"""
+
+---
+## YOUR SPECIALIZED PERSPECTIVE: {perspective['name']}
+
+You are operating as a **{perspective['name']}**. This means you should:
+
+{perspective['focus']}
+
+While maintaining all the core principles above, prioritize factors that align with your specialized perspective. This helps ensure diverse factor discovery across the team of discovery agents.
+
+Remember: You're part of a team where other agents have different perspectives. Your job is to find factors that others might miss from your specialized viewpoint, not to cover everything.
+"""
+    
+    full_prompt = base_prompt + perspective_guidance
+    temperature = perspective['temperature']
+    
+    return full_prompt, temperature
+
+
 VALIDATOR_AGENT_PROMPT = """You are a factor validation specialist. Deduplicate, validate relevance, and filter low-quality factors.
 
 PROCESS:
@@ -595,7 +694,7 @@ You are operating as a **{class_info['name']}**. This means:
     for trait in class_info['traits']:
         class_guidance += f"- {trait}\n"
     
-    class_guidance += f"""
+    class_guidance += """
 
 Apply these principles throughout your analysis, but do not abandon the core superforecasting methodology. Your class influences *how* you weight and interpret evidence, not *whether* you follow rigorous analysis.
 

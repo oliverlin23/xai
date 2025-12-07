@@ -4,6 +4,7 @@ CRITICAL: Coordinates all 24 agents through 4 phases
 """
 from typing import Dict, Any, List, Optional
 from app.db import SessionRepository, AgentLogRepository, FactorRepository
+from app.db.repositories import ForecasterResponseRepository
 from app.agents import (
     DiscoveryAgent,
     ValidatorAgent,
@@ -81,11 +82,22 @@ class AgentOrchestrator:
         logger.info(f"[ORCHESTRATOR] Phase counts: P1={self.phase_1_count}, P2={self.phase_2_count}, P3={self.phase_3_count} ({self.phase_3_historical_count} historical + {self.phase_3_current_count} current), P4={self.phase_4_count}")
         
         # Initialize repositories
-        logger.info("[ORCHESTRATOR] Initializing repositories: SessionRepository, AgentLogRepository, FactorRepository")
+        logger.info("[ORCHESTRATOR] Initializing repositories: SessionRepository, AgentLogRepository, FactorRepository, ForecasterResponseRepository")
         self.session_repo = SessionRepository()
         self.log_repo = AgentLogRepository()
         self.factor_repo = FactorRepository()
+        self.response_repo = ForecasterResponseRepository()
         logger.info("[ORCHESTRATOR] Initialization complete")
+        
+        # Create forecaster response record at initialization
+        logger.info(f"[ORCHESTRATOR] Creating forecaster response record for class: {forecaster_class}")
+        response_record = self.response_repo.create_response(
+            session_id=self.session_id,
+            forecaster_class=forecaster_class,
+            status="running"
+        )
+        self.response_id = response_record.get("id")
+        logger.info(f"[ORCHESTRATOR] Forecaster response ID: {self.response_id}")
 
         # Track tokens in memory - will calculate total at end instead of incrementing
         # This avoids race conditions and reduces DB operations
@@ -189,15 +201,25 @@ class AgentOrchestrator:
                 else:
                     final_prediction["total_duration_formatted"] = f"{seconds}s"
 
-            # Update session with final result (including duration)
+            # Update session status (without prediction data)
             logger.info("[ORCHESTRATOR] Updating session status to 'completed'")
-            await self.update_session_status(
-                "completed", 
-                "synthesis", 
-                final_prediction,
+            self.session_repo.update_status(
+                session_id=self.session_id,
+                status="completed",
+                phase="synthesis"
+            )
+            
+            # Update forecaster response with prediction results
+            logger.info("[ORCHESTRATOR] Updating forecaster response with prediction results")
+            self.response_repo.update_response(
+                response_id=self.response_id,
+                prediction_result=final_prediction,
                 prediction_probability=final_prediction.get("prediction_probability"),
                 confidence=final_prediction.get("confidence"),
-                total_duration_seconds=round(workflow_duration, 2)
+                total_duration_seconds=round(workflow_duration, 2),
+                total_duration_formatted=final_prediction.get("total_duration_formatted"),
+                phase_durations=final_prediction.get("phase_durations"),
+                status="completed"
             )
             
             logger.info("=" * 60)
@@ -224,11 +246,22 @@ class AgentOrchestrator:
                 error_data["total_duration_formatted"] = f"{minutes}m {seconds}s"
             else:
                 error_data["total_duration_formatted"] = f"{seconds}s"
-            await self.update_session_status(
-                "failed", 
-                error=str(e),
-                total_duration_seconds=round(workflow_duration, 2)
+            # Update session status
+            self.session_repo.update_status(
+                session_id=self.session_id,
+                status="failed",
+                error_message=str(e)
             )
+            
+            # Update forecaster response with error
+            if hasattr(self, 'response_id'):
+                self.response_repo.update_response(
+                    response_id=self.response_id,
+                    status="failed",
+                    error_message=str(e),
+                    total_duration_seconds=round(workflow_duration, 2),
+                    total_duration_formatted=error_data.get("total_duration_formatted")
+                )
             raise
 
     async def run_phase_1(self):
@@ -641,14 +674,11 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
         self,
         status: str,
         phase: str = None,
-        prediction_result: Dict[str, Any] = None,
-        error: str = None,
-        prediction_probability: float = None,
-        confidence: float = None,
-        total_duration_seconds: float = None
+        error: str = None
     ):
         """
-        Update session status and phase
+        Update session status and phase (without prediction data).
+        Prediction data is now stored in forecaster_responses table.
         
         DB Operation: UPDATE sessions
         See: app/agents/db_mapping.py for detailed documentation
@@ -656,21 +686,13 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
         Args:
             status: Session status (running, completed, failed)
             phase: Optional phase name
-            prediction_result: Optional full prediction result dict (stored in JSONB)
             error: Optional error message
-            prediction_probability: Optional probability of event (0.0-1.0) - stored as separate column
-            confidence: Optional confidence in probability estimate (0.0-1.0) - stored as separate column
-            total_duration_seconds: Optional total execution time - stored as separate column
         """
         self.session_repo.update_status(
             session_id=self.session_id,
             status=status,
             phase=phase,
-            prediction_result=prediction_result,
-            error_message=error,
-            prediction_probability=prediction_probability,
-            confidence=confidence,
-            total_duration_seconds=total_duration_seconds
+            error_message=error
         )
         
         # Note: Error handling would go here if needed

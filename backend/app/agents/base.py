@@ -35,6 +35,7 @@ class BaseAgent(ABC):
         timeout_seconds: int = 300,
         session_id: Optional[str] = None,
         grok_model: Optional[str] = None,
+        temperature: float = 0.7,
     ):
         logger.info(f"[BASE AGENT] Initializing {agent_name} (phase: {phase})")
         self.agent_name = agent_name
@@ -44,6 +45,7 @@ class BaseAgent(ABC):
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
         self.session_id = session_id
+        self.temperature = temperature
         
         # Create agent-specific logger if session_id provided
         if session_id:
@@ -122,7 +124,8 @@ class BaseAgent(ABC):
                         system_prompt=self.system_prompt,
                         user_message=user_message,
                         output_schema=self.output_schema,
-                        enable_web_search=enable_web_search
+                        enable_web_search=enable_web_search,
+                        temperature=self.temperature
                     ),
                     timeout=self.timeout_seconds
                 )

@@ -100,24 +100,17 @@ class SessionRepository(BaseRepository):
         session_id: str,
         status: str,
         phase: Optional[str] = None,
-        prediction_result: Optional[Dict[str, Any]] = None,
-        error_message: Optional[str] = None,
-        prediction_probability: Optional[float] = None,
-        confidence: Optional[float] = None,
-        total_duration_seconds: Optional[float] = None
+        error_message: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Update session status and optionally phase/prediction
+        Update session status and optionally phase.
+        Note: Prediction results are now stored in forecaster_responses table.
         
         Args:
             session_id: Session ID
             status: New status (running, completed, failed)
             phase: Optional phase name
-            prediction_result: Optional prediction result dict (still stored in JSONB for full details)
             error_message: Optional error message if failed
-            prediction_probability: Optional probability of event (0.0-1.0) - stored as separate column
-            confidence: Optional confidence in probability estimate (0.0-1.0) - stored as separate column
-            total_duration_seconds: Optional total execution time in seconds - stored as separate column
         
         Returns:
             Updated session record
@@ -127,21 +120,8 @@ class SessionRepository(BaseRepository):
         if phase:
             data["current_phase"] = phase
         
-        if prediction_result:
-            data["prediction_result"] = prediction_result
-        
         if error_message:
             data["error_message"] = error_message
-        
-        # Store prediction_probability, confidence, and duration as separate columns for easier querying
-        if prediction_probability is not None:
-            data["prediction_probability"] = float(prediction_probability)
-        
-        if confidence is not None:
-            data["confidence"] = float(confidence)
-        
-        if total_duration_seconds is not None:
-            data["total_duration_seconds"] = float(total_duration_seconds)
         
         if status in ["completed", "failed"]:
             data["completed_at"] = datetime.utcnow().isoformat()
@@ -398,4 +378,169 @@ class FactorRepository(BaseRepository):
                 order_by="created_at",
                 order_desc=True
             )
+
+
+class TraderRepository(BaseRepository):
+    """Repository for trader_state_live table"""
+    
+    def __init__(self):
+        super().__init__("trader_state_live")
+    
+    def get_session_traders(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all traders for a session
+        
+        Args:
+            session_id: Session ID
+            
+        Returns:
+            List of trader records
+        """
+        return self.find_all(
+            filters={"session_id": session_id},
+            order_by="name",
+            order_desc=False
+        )
+    
+    def get_trader(self, session_id: str, trader_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific trader for a session
+        
+        Args:
+            session_id: Session ID
+            trader_name: Trader name
+            
+        Returns:
+            Trader record or None
+        """
+        return self.find_one({
+            "session_id": session_id,
+            "name": trader_name
+        })
+
+
+class ForecasterResponseRepository(BaseRepository):
+    """Repository for forecaster_responses table"""
+    
+    def __init__(self):
+        super().__init__("forecaster_responses")
+    
+    def create_response(
+        self,
+        session_id: str,
+        forecaster_class: str,
+        status: str = "running"
+    ) -> Dict[str, Any]:
+        """
+        Create a new forecaster response
+        
+        Args:
+            session_id: Session ID
+            forecaster_class: Forecaster class/personality (e.g., 'conservative', 'momentum')
+            status: Initial status (default: 'running')
+        
+        Returns:
+            Created forecaster response record
+        """
+        data = {
+            "session_id": session_id,
+            "forecaster_class": forecaster_class,
+            "status": status,
+        }
+        return self.create(data)
+    
+    def update_response(
+        self,
+        response_id: str,
+        prediction_result: Optional[Dict[str, Any]] = None,
+        prediction_probability: Optional[float] = None,
+        confidence: Optional[float] = None,
+        total_duration_seconds: Optional[float] = None,
+        total_duration_formatted: Optional[str] = None,
+        phase_durations: Optional[Dict[str, Any]] = None,
+        status: Optional[str] = None,
+        error_message: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Update a forecaster response with prediction results
+        
+        Args:
+            response_id: Response ID
+            prediction_result: Full prediction result JSONB
+            prediction_probability: Probability of event (0.0-1.0)
+            confidence: Confidence in probability estimate (0.0-1.0)
+            total_duration_seconds: Total execution time in seconds
+            total_duration_formatted: Human-readable duration
+            phase_durations: Duration breakdown by phase
+            status: Status (running, completed, failed)
+            error_message: Error message if failed
+        
+        Returns:
+            Updated response record
+        """
+        data = {}
+        
+        if prediction_result is not None:
+            data["prediction_result"] = prediction_result
+        
+        if prediction_probability is not None:
+            data["prediction_probability"] = float(prediction_probability)
+        
+        if confidence is not None:
+            data["confidence"] = float(confidence)
+        
+        if total_duration_seconds is not None:
+            data["total_duration_seconds"] = float(total_duration_seconds)
+        
+        if total_duration_formatted is not None:
+            data["total_duration_formatted"] = total_duration_formatted
+        
+        if phase_durations is not None:
+            data["phase_durations"] = phase_durations
+        
+        if status is not None:
+            data["status"] = status
+            if status in ["completed", "failed"]:
+                data["completed_at"] = datetime.utcnow().isoformat()
+        
+        if error_message is not None:
+            data["error_message"] = error_message
+        
+        return self.update(response_id, data)
+    
+    def get_session_responses(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all forecaster responses for a session
+        
+        Args:
+            session_id: Session ID
+        
+        Returns:
+            List of forecaster response records
+        """
+        return self.find_all(
+            filters={"session_id": session_id},
+            order_by="created_at",
+            order_desc=False
+        )
+    
+    def get_response_by_class(
+        self,
+        session_id: str,
+        forecaster_class: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific forecaster response by class
+        
+        Args:
+            session_id: Session ID
+            forecaster_class: Forecaster class
+        
+        Returns:
+            Response record or None
+        """
+        return self.find_one({
+            "session_id": session_id,
+            "forecaster_class": forecaster_class
+        })
 

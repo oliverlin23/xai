@@ -54,6 +54,7 @@ class ForecastRequest(BaseModel):
     question_type: str = "binary"  # binary, numeric, categorical
     agent_counts: Optional[AgentCounts] = None  # Optional agent counts (defaults to standard 24-agent setup)
     forecaster_class: str = "balanced"  # One of: "conservative", "momentum", "historical", "realtime", "balanced"
+    run_all_forecasters: bool = False  # If True, run all 5 forecaster personalities in parallel (for Cassandra)
 
 
 class ForecastResponse(BaseModel):
@@ -71,23 +72,51 @@ async def health_check():
 
 
 async def run_orchestrator(session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None, forecaster_class: str = "balanced"):
-    """Run the agent orchestrator in background"""
-    logger.info(f"[BACKGROUND TASK] Starting orchestrator for session {session_id}")
+    """Run the agent orchestrator in background for a specific forecaster class"""
+    logger.info(f"[BACKGROUND TASK] Starting orchestrator for session {session_id}, forecaster_class: {forecaster_class}")
     logger.info(f"[BACKGROUND TASK] Question: {question_text[:100]}...")
     if agent_counts:
         logger.info(f"[BACKGROUND TASK] Agent counts: {agent_counts}")
     else:
-        logger.info("[BACKGROUND TASK] Using default agent counts (10, 3, 10, 1)")
+        logger.info(f"[BACKGROUND TASK] Using default agent counts for {forecaster_class}")
     logger.info(f"[BACKGROUND TASK] Forecaster class: {forecaster_class}")
     
     try:
-        logger.info(f"[BACKGROUND TASK] Creating AgentOrchestrator instance")
+        logger.info(f"[BACKGROUND TASK] Creating AgentOrchestrator instance for {forecaster_class}")
         orchestrator = AgentOrchestrator(session_id, question_text, agent_counts=agent_counts, forecaster_class=forecaster_class)
-        logger.info(f"[BACKGROUND TASK] Calling orchestrator.run()")
+        logger.info(f"[BACKGROUND TASK] Calling orchestrator.run() for {forecaster_class}")
         await orchestrator.run()
-        logger.info(f"[BACKGROUND TASK] Orchestrator completed successfully for session {session_id}")
+        logger.info(f"[BACKGROUND TASK] Orchestrator completed successfully for session {session_id}, forecaster_class: {forecaster_class}")
     except Exception as e:
-        logger.error(f"[BACKGROUND TASK] Orchestrator failed for session {session_id}: {e}", exc_info=True)
+        logger.error(f"[BACKGROUND TASK] Orchestrator failed for session {session_id}, forecaster_class {forecaster_class}: {e}", exc_info=True)
+
+
+async def run_all_forecasters(session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None):
+    """Run all 5 forecaster personalities in parallel for a session"""
+    from app.agents.prompts import FORECASTER_CLASSES
+    
+    forecaster_classes = list(FORECASTER_CLASSES.keys())  # ['conservative', 'momentum', 'historical', 'realtime', 'balanced']
+    logger.info(f"[BACKGROUND TASK] Running all {len(forecaster_classes)} forecaster classes in parallel for session {session_id}")
+    logger.info(f"[BACKGROUND TASK] Forecaster classes: {forecaster_classes}")
+    
+    # Run all orchestrators in parallel
+    tasks = [
+        run_orchestrator(session_id, question_text, agent_counts, fc)
+        for fc in forecaster_classes
+    ]
+    
+    # Use asyncio.gather to run all in parallel, but don't fail all if one fails
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Log results
+    for i, result in enumerate(results):
+        fc = forecaster_classes[i]
+        if isinstance(result, Exception):
+            logger.error(f"[BACKGROUND TASK] Forecaster {fc} failed: {result}")
+        else:
+            logger.info(f"[BACKGROUND TASK] Forecaster {fc} completed successfully")
+    
+    logger.info(f"[BACKGROUND TASK] All forecasters completed for session {session_id}")
 
 
 @app.post("/api/forecasts", response_model=ForecastResponse)
@@ -99,15 +128,17 @@ async def create_forecast(request: ForecastRequest, background_tasks: Background
     logger.info("POST /api/forecasts - Creating new forecast")
     logger.info(f"Question: {request.question_text[:100]}...")
     logger.info(f"Question type: {request.question_type}")
-    logger.info(f"Forecaster class: {request.forecaster_class}")
+    logger.info(f"Run all forecasters: {request.run_all_forecasters}")
     
-    # Validate forecaster_class
+    # Validate forecaster_class if not running all
     from app.agents.prompts import FORECASTER_CLASSES
-    if request.forecaster_class not in FORECASTER_CLASSES:
-        logger.warning(f"Invalid forecaster_class '{request.forecaster_class}', defaulting to 'balanced'")
-        forecaster_class = "balanced"
-    else:
-        forecaster_class = request.forecaster_class
+    if not request.run_all_forecasters:
+        if request.forecaster_class not in FORECASTER_CLASSES:
+            logger.warning(f"Invalid forecaster_class '{request.forecaster_class}', defaulting to 'balanced'")
+            forecaster_class = "balanced"
+        else:
+            forecaster_class = request.forecaster_class
+        logger.info(f"Forecaster class: {forecaster_class}")
     
     # Create session in database
     logger.info("Calling SessionRepository.create_session()")
@@ -142,11 +173,22 @@ async def create_forecast(request: ForecastRequest, background_tasks: Background
         
         logger.info(f"Agent counts: {agent_counts}")
     else:
-        logger.info("No agent counts provided, using forecaster class defaults")
+        if request.run_all_forecasters:
+            logger.info("No agent counts provided, each forecaster will use its own defaults")
+        else:
+            logger.info("No agent counts provided, using forecaster class defaults")
     
-    # Start orchestrator in background
-    logger.info("Adding orchestrator to background tasks")
-    background_tasks.add_task(run_orchestrator, session_id, request.question_text, agent_counts, forecaster_class)
+    # Determine which forecasters to run
+    if request.run_all_forecasters:
+        # Run all 5 forecaster personalities in parallel (for Cassandra)
+        # Each will create its own forecaster_response record
+        logger.info("Starting all 5 forecaster personalities in parallel")
+        logger.info("Forecaster classes: conservative, momentum, historical, realtime, balanced")
+        background_tasks.add_task(run_all_forecasters, session_id, request.question_text, agent_counts)
+    else:
+        # Run single forecaster (for superforecast tab)
+        logger.info(f"Starting single forecaster: {forecaster_class}")
+        background_tasks.add_task(run_orchestrator, session_id, request.question_text, agent_counts, forecaster_class)
     logger.info("=" * 60)
 
     # Parse created_at (handle both ISO format and string)
@@ -173,6 +215,7 @@ async def get_forecast(forecast_id: str):
     """
     logger.info(f"GET /api/forecasts/{forecast_id} - Fetching forecast")
     from app.db import SessionRepository, AgentLogRepository, FactorRepository
+    from app.db.repositories import ForecasterResponseRepository
     
     logger.info("Initializing repositories: SessionRepository, AgentLogRepository, FactorRepository")
     session_repo = SessionRepository()
@@ -196,28 +239,37 @@ async def get_forecast(forecast_id: str):
     
     logger.info(f"Returning forecast data: {len(agent_logs)} logs, {len(factors)} factors")
     
-    # Extract duration and prediction fields - prefer separate columns, fallback to JSONB
-    prediction_result = session.get("prediction_result")
+    # Get forecaster responses for this session
+    logger.info(f"Fetching forecaster responses for session {forecast_id}")
+    response_repo = ForecasterResponseRepository()
+    forecaster_responses = response_repo.get_session_responses(forecast_id)
     
-    # Get total_duration_seconds from column first, then fallback to JSONB
-    total_duration_seconds = session.get("total_duration_seconds")
-    if total_duration_seconds is None and prediction_result and isinstance(prediction_result, dict):
-        total_duration_seconds = prediction_result.get("total_duration_seconds")
+    # For backward compatibility, use the first (or most recent) response if available
+    # In the future, the frontend should handle multiple responses
+    primary_response = None
+    if forecaster_responses:
+        # Prefer completed responses, then by creation time
+        completed_responses = [r for r in forecaster_responses if r.get("status") == "completed"]
+        if completed_responses:
+            primary_response = completed_responses[0]  # Could sort by created_at if needed
+        else:
+            primary_response = forecaster_responses[0]
     
-    # Get prediction_probability and confidence from columns first, then fallback to JSONB
-    prediction_probability = session.get("prediction_probability")
-    confidence = session.get("confidence")
-    if prediction_probability is None and prediction_result and isinstance(prediction_result, dict):
-        prediction_probability = prediction_result.get("prediction_probability")
-    if confidence is None and prediction_result and isinstance(prediction_result, dict):
-        confidence = prediction_result.get("confidence")
-    
-    # Format duration for display
+    # Extract prediction data from primary response
+    prediction_result = None
+    total_duration_seconds = None
+    prediction_probability = None
+    confidence = None
     total_duration_formatted = None
     phase_durations = None
-    if prediction_result and isinstance(prediction_result, dict):
-        total_duration_formatted = prediction_result.get("total_duration_formatted")
-        phase_durations = prediction_result.get("phase_durations")
+    
+    if primary_response:
+        prediction_result = primary_response.get("prediction_result")
+        total_duration_seconds = primary_response.get("total_duration_seconds")
+        prediction_probability = primary_response.get("prediction_probability")
+        confidence = primary_response.get("confidence")
+        total_duration_formatted = primary_response.get("total_duration_formatted")
+        phase_durations = primary_response.get("phase_durations")
     
     # Format response
     response = {
@@ -231,7 +283,8 @@ async def get_forecast(forecast_id: str):
         "agent_logs": agent_logs,
         "total_cost_tokens": session.get("total_cost_tokens", 0),
         "created_at": session["created_at"],
-        "completed_at": session.get("completed_at")
+        "completed_at": session.get("completed_at"),
+        "forecaster_responses": forecaster_responses  # Include all responses for future use
     }
     
     # Add duration fields if available
@@ -241,7 +294,7 @@ async def get_forecast(forecast_id: str):
     if phase_durations:
         response["phase_durations"] = phase_durations
     
-    # Add prediction_probability and confidence if available (from columns or JSONB)
+    # Add prediction_probability and confidence if available
     if prediction_probability is not None:
         response["prediction_probability"] = float(prediction_probability) if prediction_probability else None
     if confidence is not None:
