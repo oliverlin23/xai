@@ -10,14 +10,28 @@ const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 export default function Page() {
   const router = useRouter()
   const [query, setQuery] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [loadStarted, setLoadStarted] = useState(false)
+  const [overlayVisible, setOverlayVisible] = useState(false)
+  const [overlayFadeOut, setOverlayFadeOut] = useState(false)
 
   const handleSubmit = () => {
-    if (!query.trim()) return
-    router.push("/office")
+    if (!query.trim() || isLoading) return
+    setIsLoading(true)
+    setLoadStarted(true)
+    // allow CSS transition to pick up opacity change
+    requestAnimationFrame(() => setOverlayVisible(true))
+    // fade to black shortly before navigating
+    setTimeout(() => setOverlayFadeOut(true), 1500)
+    setTimeout(() => {
+      router.push("/office")
+    }, 2400)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (e.key === "Enter") {
+    // Enter to submit (prevent newline); allow Shift+Enter to newline
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
       handleSubmit()
     }
   }
@@ -89,6 +103,8 @@ export default function Page() {
                   placeholder="What do you want to know?"
                   className="w-full resize-none bg-transparent text-[#0f172a] placeholder:text-slate-500 px-5 py-4 rounded-lg focus:outline-none"
                   rows={3}
+                  autoCorrect="off"
+                  spellCheck={false}
                   style={{ minHeight: "64px", maxHeight: "260px", overflow: "hidden" }}
                   onInput={(e) => {
                     const target = e.target as HTMLTextAreaElement
@@ -102,6 +118,45 @@ export default function Page() {
           </div>
         </div>
       </div>
+
+      {/* Loading screen overlay */}
+      {loadStarted && (
+        <div
+          className={`fixed inset-0 z-50 transition-opacity duration-2000 ease-in-out ${
+            overlayVisible ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <Image
+            src="/sprites/subwaystation.png"
+            alt="Loading..."
+            fill
+            sizes="100vw"
+            className="object-cover brightness-115"
+            priority
+          />
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] transition-opacity duration-1200 ease-in-out" />
+          <div
+            className={`absolute inset-0 bg-black transition-opacity duration-1200 ease-in-out ${
+              overlayFadeOut ? "opacity-100" : "opacity-0"
+            }`}
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 text-[#f7f5f0] drop-shadow-[0_4px_12px_rgba(0,0,0,0.55)]">
+              <div className="text-xl tracking-[0.18em] uppercase flex items-center gap-1">
+                <span>Departing</span>
+                <span className="inline-flex w-10 justify-between text-lg">
+                  <span className="animate-[blink_1s_infinite]">.</span>
+                  <span className="animate-[blink_1.1s_infinite]">.</span>
+                  <span className="animate-[blink_1.2s_infinite]">.</span>
+                </span>
+              </div>
+              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20 relative">
+                <div className="absolute inset-y-0 left-0 w-1/3 animate-[slide_1.8s_ease-in-out_infinite] bg-white/60 rounded-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
