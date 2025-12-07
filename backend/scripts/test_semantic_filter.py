@@ -52,7 +52,8 @@ async def test_semantic_filter(
         max_tweets_to_fetch=max_tweets,
         max_tweets_to_return=10,
         min_relevance_score=0.3,
-        lookback_days=7,
+        lookback_days=7,  # X API recent search max is 7 days
+        include_replies=True,  # Replies often have good signal
     )
 
     try:
@@ -126,8 +127,8 @@ def main():
     parser.add_argument(
         "--max-tweets",
         type=int,
-        default=30,
-        help="Maximum tweets to fetch from x_search",
+        default=100,
+        help="Maximum tweets to fetch from x_search (X API allows up to 100 per query)",
     )
     
     args = parser.parse_args()

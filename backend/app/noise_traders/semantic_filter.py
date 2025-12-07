@@ -120,34 +120,44 @@ class SearchQueryOutput(BaseModel):
 
 KEYWORD_EXTRACTION_PROMPT = """You are a search query optimizer for the X (Twitter) API.
 
-Your task is to convert a prediction market question into an effective boolean search query that will find relevant tweets.
+Your task is to convert a prediction market question into a SIMPLE search query that will find relevant tweets.
 
-RULES FOR X API SEARCH:
-1. Use OR to combine synonyms and related terms: (bitcoin OR BTC OR crypto)
-2. Keep it simple - 2-4 keyword groups work best
-3. Avoid overly specific phrases that won't match tweets
-4. Include common abbreviations and slang (e.g., BTC for Bitcoin, ETH for Ethereum)
-5. Focus on the CORE TOPIC, not the prediction framing (ignore "will", "by end of", etc.)
+CRITICAL RULES:
+1. NEVER use AND - it's way too restrictive and returns almost no results
+2. NEVER use multiple keyword groups - X API treats spaces as AND
+3. ONLY use OR to combine 3-6 keywords into a single flat list
+4. Include common abbreviations and slang (BTC for Bitcoin, ETH for Ethereum)
+5. Focus on the CORE TOPIC only - ignore prediction framing words
+
+CORRECT FORMAT:
+keyword1 OR keyword2 OR keyword3 OR keyword4
 
 EXAMPLES:
-- "Will Bitcoin reach $100k by end of 2025?" → "(bitcoin OR BTC) (price OR 100k OR bull OR rally)"
-- "Will Trump win the 2024 election?" → "(trump OR donald) (election OR vote OR win OR 2024)"
-- "Will OpenAI release GPT-5 in 2025?" → "(openai OR gpt5 OR gpt-5) (release OR launch OR announce)"
-- "Will Ethereum flip Bitcoin market cap?" → "(ethereum OR ETH) (bitcoin OR BTC) (flip OR marketcap OR dominance)"
+- "Will Bitcoin reach $100k by end of 2025?" → "bitcoin OR BTC OR crypto"
+- "Will Trump win the 2024 election?" → "trump OR maga OR election"
+- "Will OpenAI release GPT-5 in 2025?" → "openai OR gpt5 OR chatgpt OR altman"
+- "Will Ethereum flip Bitcoin market cap?" → "ethereum OR ETH OR bitcoin OR BTC"
+- "Will there be a US recession in 2025?" → "recession OR economy OR inflation"
 
-Return a query that will cast a wide net to find relevant tweets. Better to find too many (we filter later) than too few."""
+WRONG - NEVER DO THIS:
+- "(bitcoin OR BTC) (price OR 100k)" ← WRONG: spaces act as AND
+- "bitcoin AND price" ← WRONG: AND is too restrictive
+- "(trump) (election)" ← WRONG: two groups = AND logic
+- "bitcoin price 100k" ← WRONG: spaces = AND
+
+Return ONLY a flat list of OR'd keywords. Nothing else."""
 
 
 @dataclass
 class SemanticFilterConfig:
     """Configuration for the semantic filter"""
 
-    max_tweets_to_fetch: int = 50
+    max_tweets_to_fetch: int = 100  # X API allows up to 100 per query
     max_tweets_to_return: int = 15
     min_relevance_score: float = 0.3
-    lookback_days: int = 7
+    lookback_days: int = 7  # X API recent search only allows 7 days max
     include_retweets: bool = False
-    include_replies: bool = False
+    include_replies: bool = True  # Replies often contain good signal
     lang: str = "en"
 
 
