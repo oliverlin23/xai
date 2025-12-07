@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Press_Start_2P } from "next/font/google"
 import "./globals.css"
 import { Providers } from "./providers"
+import { Navigation } from "@/components/Navigation"
 
 const pressStart = Press_Start_2P({
   weight: "400",
@@ -23,6 +24,7 @@ export default function RootLayout({
       <body className={pressStart.className}>
         <Providers>
           <div className="min-h-screen">
+            <Navigation />
             <main>
               {children}
             </main>
