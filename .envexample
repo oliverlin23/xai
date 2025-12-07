@@ -6,7 +6,7 @@
 GROK_API_KEY="your-grok-api-key"
 
 # X API (for tweet lookup)
-X_API_BEARER_TOKEN="your-x-api-bearer-token"
+X_BEARER_TOKEN="your-x-api-bearer-token"
 
 # Supabase
 SUPABASE_URL="https://your-project.supabase.co"
