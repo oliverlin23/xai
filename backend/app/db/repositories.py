@@ -382,6 +382,68 @@ class TraderRepository(BaseRepository):
             "session_id": session_id,
             "name": trader_name
         })
+    
+    def upsert_trader(
+        self, 
+        session_id: str, 
+        trader_name: str, 
+        trader_type: str,
+        system_prompt: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Create or update a trader record.
+        Uses upsert to handle race conditions.
+        
+        Args:
+            session_id: Session ID
+            trader_name: Trader name (must match enum value)
+            trader_type: Type of trader (fundamental, noise, user)
+            system_prompt: System prompt/notes to save
+            
+        Returns:
+            Created or updated trader record
+        """
+        existing = self.get_trader(session_id, trader_name)
+        if existing:
+            return self.update(existing["id"], {"system_prompt": system_prompt})
+        else:
+            return self.create({
+                "session_id": session_id,
+                "trader_type": trader_type,
+                "name": trader_name,
+                "system_prompt": system_prompt
+            })
+    
+    def save_system_prompt(
+        self, 
+        session_id: str, 
+        trader_name: str, 
+        system_prompt: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Save/update a trader's system prompt.
+        Returns None if trader doesn't exist and cannot be created.
+        
+        Args:
+            session_id: Session ID
+            trader_name: Trader name
+            system_prompt: System prompt to save
+            
+        Returns:
+            Updated trader record or None
+        """
+        try:
+            existing = self.get_trader(session_id, trader_name)
+            if existing:
+                result = self.update(existing["id"], {"system_prompt": system_prompt})
+                logger.info(f"[DB] Saved system_prompt for {trader_name} ({len(system_prompt)} chars)")
+                return result
+            else:
+                logger.warning(f"[DB] Trader {trader_name} not found in session {session_id}")
+                return None
+        except Exception as e:
+            logger.error(f"[DB] Failed to save system_prompt for {trader_name}: {e}")
+            return None
 
 
 class ForecasterResponseRepository(BaseRepository):

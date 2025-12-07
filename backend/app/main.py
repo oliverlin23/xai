@@ -418,8 +418,10 @@ async def run_trading_simulation_background(
         # Register simulation in global registry
         register_simulation(simulation)
         
-        # Initialize agents and start continuous trading
+        # Initialize agents
         await simulation.initialize_agents()
+        
+        # Start continuous trading and track the task for cancellation
         await simulation.run_continuous(interval_seconds=interval_seconds)
         
     except Exception as e:
@@ -596,7 +598,7 @@ async def stop_simulation(session_id: str):
     return StopSimulationResponse(
         session_id=session_id,
         stopped=True,
-        message="Simulation stop requested. It will stop after the current round completes.",
+        message="Simulation stopped.",
     )
 
 
@@ -629,6 +631,82 @@ async def get_trades(session_id: str, limit: int = 50):
     trades = market_maker.get_recent_trades(session_id, limit=limit)
     
     return {"trades": trades}
+
+
+class SaveSystemPromptRequest(BaseModel):
+    """Request to save a trader's system prompt"""
+    trader_name: str
+    system_prompt: str
+
+
+@app.post("/api/sessions/{session_id}/traders/{trader_name}/system_prompt")
+async def save_trader_system_prompt(
+    session_id: str, 
+    trader_name: str,
+    request: SaveSystemPromptRequest
+):
+    """
+    Save a trader's system prompt/notes.
+    Called by agents after each prediction to persist their reasoning.
+    """
+    logger.info(f"POST /api/sessions/{session_id}/traders/{trader_name}/system_prompt")
+    
+    from app.db.repositories import TraderRepository
+    
+    trader_repo = TraderRepository()
+    result = trader_repo.save_system_prompt(
+        session_id=session_id,
+        trader_name=trader_name,
+        system_prompt=request.system_prompt
+    )
+    
+    if result:
+        return {
+            "success": True,
+            "trader_name": trader_name,
+            "prompt_length": len(request.system_prompt)
+        }
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trader {trader_name} not found in session {session_id}"
+        )
+
+
+@app.get("/api/sessions/{session_id}/traders")
+async def get_session_traders(session_id: str):
+    """
+    Get all traders and their states for a session.
+    """
+    logger.info(f"GET /api/sessions/{session_id}/traders")
+    
+    from app.db.repositories import TraderRepository
+    
+    trader_repo = TraderRepository()
+    traders = trader_repo.get_session_traders(session_id)
+    
+    return {"traders": traders}
+
+
+@app.get("/api/sessions/{session_id}/traders/{trader_name}")
+async def get_trader_state(session_id: str, trader_name: str):
+    """
+    Get a specific trader's state including system_prompt.
+    """
+    logger.info(f"GET /api/sessions/{session_id}/traders/{trader_name}")
+    
+    from app.db.repositories import TraderRepository
+    
+    trader_repo = TraderRepository()
+    trader = trader_repo.get_trader(session_id, trader_name)
+    
+    if trader:
+        return trader
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trader {trader_name} not found in session {session_id}"
+        )
 
 
 @app.get("/api/forecasts")

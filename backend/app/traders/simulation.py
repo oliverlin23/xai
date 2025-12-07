@@ -65,6 +65,7 @@ class TradingSimulation:
         self._running = False
         self._round_number = 0
         self._agents: Dict[str, Any] = {}
+        self._task: Optional[asyncio.Task] = None  # Track the running task
         
         self._market_maker = SupabaseMarketMaker()
         self._trader_repo = TraderRepository()
@@ -230,6 +231,8 @@ class TradingSimulation:
             interval_seconds: Seconds between rounds (default 10)
         """
         self._running = True
+        # Store reference to current task so stop() can cancel it
+        self._task = asyncio.current_task()
         logger.info(f"[SIMULATION] Starting continuous simulation (interval: {interval_seconds}s)")
         
         # Initialize agents if not done
@@ -240,6 +243,9 @@ class TradingSimulation:
             while self._running:
                 try:
                     await self.run_round()
+                except asyncio.CancelledError:
+                    logger.info("[SIMULATION] Round cancelled")
+                    raise  # Re-raise to exit the loop
                 except Exception as e:
                     logger.error(f"[SIMULATION] Round failed: {e}")
                 
@@ -251,12 +257,18 @@ class TradingSimulation:
             logger.info("[SIMULATION] Simulation cancelled")
         finally:
             self._running = False
+            self._task = None
             logger.info("[SIMULATION] Simulation stopped")
     
     def stop(self) -> None:
-        """Stop the simulation gracefully."""
+        """Stop the simulation gracefully by cancelling the running task."""
         logger.info(f"[SIMULATION] Stopping simulation for session {self.session_id}")
         self._running = False
+        
+        # Cancel the task if it's running
+        if self._task is not None and not self._task.done():
+            logger.info(f"[SIMULATION] Cancelling task for session {self.session_id}")
+            self._task.cancel()
     
     @property
     def is_running(self) -> bool:

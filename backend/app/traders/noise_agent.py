@@ -193,7 +193,7 @@ Weight higher-relevance tweets more heavily. Consider source authority.
 Be contrarian if evidence warrants it - don't anchor too heavily on market price."""
 
 
-def _get_noise_trader_prompt(sphere_key: str, use_semantic_filter: bool = False) -> str:
+def _get_noise_trader_prompt(sphere_key: str) -> str:
     """Generate system prompt for a noise trader assigned to a sphere"""
     sphere = get_sphere(sphere_key)
     if sphere is None:
@@ -319,26 +319,38 @@ class NoiseTrader(BaseAgent):
         Save notes to trader_state_live.system_prompt.
         Returns True if successful, False otherwise.
         """
-        if not self.session_id or not self._trader_repo:
+        if not self.session_id:
+            logger.warning(f"NoiseTrader ({self.sphere}) cannot save notes: no session_id")
             return False
         
+        if not self._trader_repo:
+            logger.warning(f"NoiseTrader ({self.sphere}) cannot save notes: no trader_repo")
+            return False
+        
+        if not notes:
+            logger.info(f"NoiseTrader ({self.sphere}) has no notes to save (model didn't generate notes_for_next_round)")
+        
         try:
-            trader = self._trader_repo.get_trader(self.session_id, self.trader_name)
-            if trader:
-                self._trader_repo.update(trader["id"], {"system_prompt": notes})
+            result = self._trader_repo.save_system_prompt(
+                session_id=self.session_id,
+                trader_name=self.trader_name,
+                system_prompt=notes
+            )
+            if result:
                 logger.info(f"NoiseTrader ({self.sphere}) saved notes to DB ({len(notes)} chars)")
+                return True
             else:
-                # Create new trader record if it doesn't exist
-                self._trader_repo.create({
-                    "session_id": self.session_id,
-                    "trader_type": "noise",
-                    "name": self.trader_name,
-                    "system_prompt": notes
-                })
-                logger.info(f"NoiseTrader ({self.sphere}) created trader record with notes")
-            return True
+                # Try to create if doesn't exist
+                self._trader_repo.upsert_trader(
+                    session_id=self.session_id,
+                    trader_name=self.trader_name,
+                    trader_type="noise",
+                    system_prompt=notes
+                )
+                logger.info(f"NoiseTrader ({self.sphere}) created/updated trader with notes")
+                return True
         except Exception as e:
-            logger.warning(f"Failed to save notes to DB: {e}")
+            logger.error(f"NoiseTrader ({self.sphere}) failed to save notes: {e}")
             return False
 
     async def build_user_message(
@@ -661,9 +673,10 @@ Please provide your forecast following the structured format:
                 self.status = "completed"
                 
                 # Save notes to DB for next round
-                if self.session_id and self.output_data.get("notes_for_next_round"):
-                    self.save_notes(self.output_data["notes_for_next_round"])
-                
+                # Save notes to DB for next round (always save, even if empty)
+                if self.session_id:
+                    self.save_notes(self.output_data.get("notes_for_next_round", ""))
+
                 if progress_callback:
                     await progress_callback(self.agent_name, "completed", self.output_data)
                 
@@ -689,7 +702,7 @@ Please provide your forecast following the structured format:
             await progress_callback(self.agent_name, "failed", {"error": self.error_message})
         
         raise Exception(f"Agent {self.agent_name} failed after {self.max_retries} attempts: {self.error_message}")
-
+    
     async def _execute_with_tools(
         self,
         input_data: Dict[str, Any],
@@ -787,9 +800,9 @@ Please provide your forecast following the structured format:
                 self.output_data = validated_output.model_dump()
                 self.status = "completed"
                 
-                # Save notes to DB for next round
-                if self.session_id and self.output_data.get("notes_for_next_round"):
-                    self.save_notes(self.output_data["notes_for_next_round"])
+                # Save notes to DB for next round (always save, even if empty)
+                if self.session_id:
+                    self.save_notes(self.output_data.get("notes_for_next_round", ""))
                 
                 if progress_callback:
                     await progress_callback(self.agent_name, "completed", self.output_data)
