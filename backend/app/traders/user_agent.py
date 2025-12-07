@@ -36,10 +36,10 @@ from x_search.tool import run_tool as x_search_run_tool, XSearchConfig
 # Mapping from user agent names to their X/Twitter usernames
 # Add mappings here for each user agent
 USER_ACCOUNT_MAPPINGS: Dict[str, str] = {
-    "oliver": "oliveelin",  # Example mapping
-    "owen": "owenpereira",       # Example mapping  
-    "skylar": "skylarwang15",  # Example mapping
-    "tyler": "TylerMcGraw",      # Example mapping
+    "oliver": "OliveeLin",  
+    "owen": "OwenZhang159710",       
+    "skylar": "SkylarWang15",  
+    "tyler": "tyzchen", 
 }
 
 
