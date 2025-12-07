@@ -1,9 +1,27 @@
+"use client"
+
 import Image from "next/image"
 import { Press_Start_2P } from "next/font/google"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
 export default function Page() {
+  const router = useRouter()
+  const [query, setQuery] = useState("")
+
+  const handleSubmit = () => {
+    if (!query.trim()) return
+    router.push("/office")
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSubmit()
+    }
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       <div className="fixed inset-0">
@@ -61,13 +79,16 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="flex gap-4 items-center">
-            <a
-              href="/office"
-              className="px-6 py-3 rounded-lg bg-[#2d7dd2] hover:bg-[#2568ae] text-white font-semibold shadow-lg shadow-black/30 transition-colors"
-            >
-              Enter the Floor
-            </a>
+          <div className="w-full flex justify-center">
+            <div className="w-full max-w-2xl">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+              placeholder="What do you want to know?"
+                className="w-full px-5 py-4 rounded-lg border-4 border-[#2d3748] bg-white text-[#0f172a] placeholder:text-slate-500 shadow-[0_12px_30px_rgba(0,0,0,0.45)] focus:outline-none focus:border-[#2d7dd2] transition-colors"
+              />
+            </div>
           </div>
         </div>
       </div>
