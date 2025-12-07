@@ -17,16 +17,11 @@ logger.info("=" * 60)
 logger.info("Starting Superforecaster API - main.py loaded")
 logger.info("=" * 60)
 
-from .market import router as market_router
-
 app = FastAPI(
     title="Superforecaster API",
     description="24-agent superforecasting system powered by Grok AI",
     version="0.1.0"
 )
-
-# Include market router
-app.include_router(market_router)
 
 # CORS configuration for local development
 app.add_middleware(
