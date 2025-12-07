@@ -1,0 +1,24 @@
+[project]
+name = "x-search"
+version = "0.1.0"
+description = "X (Twitter) search tool with community-based expansion"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.0.1",
+    "mcp>=0.1.0",
+]
+
+[project.scripts]
+x-search = "x_search.cli:main"
+x-search-mcp = "x_search.mcp_server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["x_search*"]
