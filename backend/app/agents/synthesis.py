@@ -4,21 +4,37 @@ Combines all research into final prediction
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
-from app.agents.prompts import SYNTHESIS_AGENT_PROMPT
+from app.agents.prompts import get_synthesis_prompt, FORECASTER_CLASSES
 from app.schemas import PredictionOutput
 
 
 class SynthesisAgent(BaseAgent):
     """Agent 24: Prediction synthesizer"""
     
-    def __init__(self, session_id: Optional[str] = None):
+    def __init__(self, session_id: Optional[str] = None, forecaster_class: str = "balanced"):
+        """
+        Initialize synthesis agent with optional forecaster class.
+        
+        Args:
+            session_id: Session ID for logging
+            forecaster_class: One of "conservative", "momentum", "historical", "realtime", "balanced"
+        """
+        if forecaster_class not in FORECASTER_CLASSES:
+            raise ValueError(f"Unknown forecaster_class: {forecaster_class}. Must be one of {list(FORECASTER_CLASSES.keys())}")
+        
+        system_prompt = get_synthesis_prompt(forecaster_class)
+        class_info = FORECASTER_CLASSES[forecaster_class]
+        
         super().__init__(
-            agent_name="synthesizer",
+            agent_name=f"synthesizer_{forecaster_class}",
             phase="synthesis",
-            system_prompt=SYNTHESIS_AGENT_PROMPT,
+            system_prompt=system_prompt,
             output_schema=PredictionOutput,
             session_id=session_id
         )
+        
+        self.forecaster_class = forecaster_class
+        self.class_info = class_info
     
     async def build_user_message(self, input_data: Dict[str, Any]) -> str:
         """Build user message with all research data"""

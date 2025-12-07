@@ -3,14 +3,16 @@
 import { useState } from "react"
 
 interface AgentCounts {
-  phase_1_discovery: number
-  phase_2_validation: number
-  phase_3_research: number
-  phase_4_synthesis: number
+  phase_1_discovery?: number
+  phase_2_validation?: number
+  phase_3_research?: number  // Backward compatible - splits 50/50 if phase_3_historical/current not provided
+  phase_3_historical?: number  // Historical research agents
+  phase_3_current?: number  // Current research agents
+  phase_4_synthesis?: number
 }
 
 interface QuestionInputProps {
-  onSubmit: (questionText: string, questionType: string, agentCounts?: AgentCounts) => void
+  onSubmit: (questionText: string, questionType: string, agentCounts?: AgentCounts, forecasterClass?: string) => void
   isSubmitting: boolean
 }
 
@@ -18,6 +20,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
   const [questionText, setQuestionText] = useState("")
   const [questionType, setQuestionType] = useState("binary")
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [forecasterClass, setForecasterClass] = useState("balanced")
   const [agentCounts, setAgentCounts] = useState<AgentCounts>({
     phase_1_discovery: 10,
     phase_2_validation: 2,
@@ -28,7 +31,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (questionText.trim()) {
-      onSubmit(questionText, questionType, agentCounts)
+      onSubmit(questionText, questionType, agentCounts, forecasterClass)
     }
   }
 
@@ -50,21 +53,42 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         />
       </div>
 
-      <div>
-        <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-2">
-          Question Type
-        </label>
-        <select
-          id="type"
-          value={questionType}
-          onChange={(e) => setQuestionType(e.target.value)}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          disabled={isSubmitting}
-        >
-          <option value="binary">Binary (Yes/No)</option>
-          <option value="numeric">Numeric Range</option>
-          <option value="categorical">Categorical</option>
-        </select>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-2">
+            Question Type
+          </label>
+          <select
+            id="type"
+            value={questionType}
+            onChange={(e) => setQuestionType(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            disabled={isSubmitting}
+          >
+            <option value="binary">Binary (Yes/No)</option>
+            <option value="numeric">Numeric Range</option>
+            <option value="categorical">Categorical</option>
+          </select>
+        </div>
+        
+        <div>
+          <label htmlFor="forecasterClass" className="block text-sm font-medium text-gray-700 mb-2">
+            Forecaster Class
+          </label>
+          <select
+            id="forecasterClass"
+            value={forecasterClass}
+            onChange={(e) => setForecasterClass(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            disabled={isSubmitting}
+          >
+            <option value="balanced">Balanced (Default)</option>
+            <option value="conservative">Conservative</option>
+            <option value="momentum">Momentum</option>
+            <option value="historical">Historical</option>
+            <option value="realtime">Real-time</option>
+          </select>
+        </div>
       </div>
 
       <div>
@@ -79,9 +103,21 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
         
         {showAdvanced && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
-            <p className="text-sm text-gray-600 mb-3">
-              Configure how many agents run in each phase (default: 10, 2, 10, 1 = 23 total)
-            </p>
+            {forecasterClass !== "balanced" ? (
+              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800 font-medium mb-1">
+                  ⓘ Agent Configuration Disabled
+                </p>
+                <p className="text-xs text-blue-700">
+                  The "{forecasterClass}" forecaster class uses its own optimized agent counts. 
+                  Switch to "Balanced" to customize agent counts.
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 mb-3">
+                Configure how many agents run in each phase (default: 10, 2, 10, 1 = 23 total)
+              </p>
+            )}
             
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -96,7 +132,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                   value={agentCounts.phase_1_discovery}
                   onChange={(e) => setAgentCounts({...agentCounts, phase_1_discovery: parseInt(e.target.value) || 10})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || forecasterClass !== "balanced"}
                 />
               </div>
               
@@ -129,7 +165,7 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
                   value={agentCounts.phase_3_research}
                   onChange={(e) => setAgentCounts({...agentCounts, phase_3_research: parseInt(e.target.value) || 10})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || forecasterClass !== "balanced"}
                 />
                 <p className="text-xs text-gray-500 mt-1">Split: half historical, half current</p>
               </div>
@@ -152,11 +188,13 @@ export function QuestionInput({ onSubmit, isSubmitting }: QuestionInputProps) {
               </div>
             </div>
             
-            <div className="pt-2 border-t border-gray-200">
-              <p className="text-xs text-gray-600">
-                Total agents: {agentCounts.phase_1_discovery + agentCounts.phase_2_validation + agentCounts.phase_3_research + agentCounts.phase_4_synthesis}
-              </p>
-            </div>
+            {forecasterClass === "balanced" && (
+              <div className="pt-2 border-t border-gray-200">
+                <p className="text-xs text-gray-600">
+                  Total agents: {(agentCounts.phase_1_discovery || 0) + (agentCounts.phase_2_validation || 0) + (agentCounts.phase_3_research || 0) + (agentCounts.phase_4_synthesis || 0)}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

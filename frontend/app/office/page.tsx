@@ -335,10 +335,11 @@ function OfficePageContent() {
         const newForecast = await api.forecasts.create({
           question_text: queryText.trim(),
           question_type: "binary",
+          forecaster_class: "balanced", // Use balanced forecaster for Cassandra
           agent_counts: {
             phase_1_discovery: 2,
             phase_2_validation: 2,
-            phase_3_research: 2,
+            phase_3_research: 2, // Backward compatible - will split 50/50 into historical/current
             phase_4_synthesis: 1,
           },
         }) as Forecast

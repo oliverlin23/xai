@@ -459,3 +459,170 @@ Before finalizing, ensure:
 
 Deliver a decisive, well-justified forecast, not a vague summary.
 """
+
+# ============ FORECASTER CLASS VARIATIONS ============
+
+# Base synthesis prompt (used as template)
+_BASE_SYNTHESIS_PROMPT = SYNTHESIS_AGENT_PROMPT
+
+# Forecaster class descriptions
+FORECASTER_CLASSES = {
+    "conservative": {
+        "name": "Conservative Institutional Trader",
+        "description": "This institutional trader has a strong research foundation and relies heavily on historical theses, generally less tech-pilled and does not rely on live-time updates as frequently. Prefers conservative probabilities and requires strong evidence before deviating from base rates.",
+        "traits": [
+            "Risk-averse: Requires higher confidence before making extreme probability estimates",
+            "Historical focus: Heavily weights historical patterns and base rates over recent news",
+            "Conservative calibration: Tends to moderate probabilities toward 0.5 unless evidence is overwhelming",
+            "Evidence threshold: Needs multiple independent sources before moving away from base rates",
+            "Stability preference: Less reactive to breaking news or volatile current data"
+        ],
+        "default_agent_counts": {
+            "phase_1_discovery": 8,  # Fewer discovery agents (more conservative)
+            "phase_2_validation": 2,  # Standard validation
+            "phase_3_historical": 7,  # More historical research
+            "phase_3_current": 3,  # Fewer current research agents
+            "phase_4_synthesis": 1  # Standard synthesis
+        }
+    },
+    "momentum": {
+        "name": "Aggressive Momentum Trader",
+        "description": "This trader focuses on momentum and trend continuation, more willing to take extreme positions when signals align. Prioritizes recent directional shifts and is comfortable with probabilities near 0 or 1 when trends are strong.",
+        "traits": [
+            "Momentum-driven: Emphasizes recent trends and directional changes over historical patterns",
+            "Extreme positioning: Comfortable with probabilities near 0.0 or 1.0 when signals align",
+            "Trend continuation: Looks for patterns that suggest continuation rather than mean reversion",
+            "Reactive: More responsive to breaking news and current data shifts",
+            "Confidence in trends: Higher confidence when multiple factors show consistent directional momentum"
+        ],
+        "default_agent_counts": {
+            "phase_1_discovery": 12,  # More discovery agents (cast wider net)
+            "phase_2_validation": 2,  # Standard validation
+            "phase_3_historical": 3,  # Fewer historical research agents
+            "phase_3_current": 7,  # More current research agents (momentum focus)
+            "phase_4_synthesis": 1  # Standard synthesis
+        }
+    },
+    "historical": {
+        "name": "Historical Pattern Analyst",
+        "description": "Deep focus on historical trends, base rates, and long-term patterns. This analyst believes history rhymes and uses extensive historical context to inform predictions, often discounting recent anomalies in favor of established patterns.",
+        "traits": [
+            "Historical emphasis: Prioritizes long-term patterns and base rates over recent events",
+            "Pattern recognition: Looks for historical analogs and similar past situations",
+            "Base rate anchor: Strongly anchors to historical frequencies before adjusting for specifics",
+            "Long-term view: Considers multi-year or multi-decade trends more than recent volatility",
+            "Skeptical of anomalies: Treats recent outliers with caution, preferring established patterns"
+        ],
+        "default_agent_counts": {
+            "phase_1_discovery": 10,  # Standard discovery
+            "phase_2_validation": 2,  # Standard validation
+            "phase_3_historical": 8,  # Heavy historical research focus
+            "phase_3_current": 2,  # Minimal current research
+            "phase_4_synthesis": 1  # Standard synthesis
+        }
+    },
+    "realtime": {
+        "name": "Current Data Specialist",
+        "description": "Prioritizes real-time information, breaking news, and current market conditions. This specialist believes the most recent data is most predictive and reacts quickly to new information, often updating probabilities based on latest developments.",
+        "traits": [
+            "Real-time focus: Heavily weights the most recent data and breaking news",
+            "Current conditions: Prioritizes present-day factors over historical patterns",
+            "Rapid updates: Willing to significantly revise probabilities based on new information",
+            "News sensitivity: More responsive to recent developments and current events",
+            "Temporal recency: Values information recency as a key indicator of relevance"
+        ],
+        "default_agent_counts": {
+            "phase_1_discovery": 10,  # Standard discovery
+            "phase_2_validation": 2,  # Standard validation
+            "phase_3_historical": 2,  # Minimal historical research
+            "phase_3_current": 8,  # Heavy current research focus
+            "phase_4_synthesis": 1  # Standard synthesis
+        }
+    },
+    "balanced": {
+        "name": "Balanced Synthesizer",
+        "description": "Default balanced approach that weighs historical patterns, current data, and evidence quality equally. Uses standard superforecasting principles without strong bias toward any particular information type.",
+        "traits": [
+            "Balanced weighting: Equally considers historical patterns and current data",
+            "Evidence-based: Makes decisions primarily on evidence quality and consistency",
+            "Standard calibration: Uses typical superforecasting calibration principles",
+            "No strong bias: Doesn't systematically favor one type of information over another",
+            "Comprehensive synthesis: Integrates all available information sources equally"
+        ],
+        "default_agent_counts": {
+            "phase_1_discovery": 10,  # Standard discovery
+            "phase_2_validation": 2,  # Standard validation
+            "phase_3_historical": 5,  # Balanced historical research
+            "phase_3_current": 5,  # Balanced current research
+            "phase_4_synthesis": 1  # Standard synthesis
+        }
+    }
+}
+
+
+def get_synthesis_prompt(forecaster_class: str = "balanced") -> str:
+    """
+    Get synthesis prompt for a specific forecaster class.
+    
+    Args:
+        forecaster_class: One of "conservative", "momentum", "historical", "realtime", "balanced"
+    
+    Returns:
+        System prompt string for the synthesis agent
+    """
+    base_prompt = _BASE_SYNTHESIS_PROMPT
+    
+    if forecaster_class not in FORECASTER_CLASSES:
+        raise ValueError(f"Unknown forecaster_class: {forecaster_class}. Must be one of {list(FORECASTER_CLASSES.keys())}")
+    
+    if forecaster_class == "balanced":
+        return base_prompt
+    
+    # Extract the core principles section and modify based on class
+    class_info = FORECASTER_CLASSES[forecaster_class]
+    
+    # Add class-specific guidance after the CORE PRINCIPLES section
+    class_guidance = f"""
+
+---
+
+## FORECASTER CLASS: {class_info['name']}
+
+You are operating as a **{class_info['name']}**. This means:
+
+"""
+    
+    for trait in class_info['traits']:
+        class_guidance += f"- {trait}\n"
+    
+    class_guidance += f"""
+
+Apply these principles throughout your analysis, but do not abandon the core superforecasting methodology. Your class influences *how* you weight and interpret evidence, not *whether* you follow rigorous analysis.
+
+"""
+    
+    # Insert class guidance after CORE PRINCIPLES section
+    insertion_point = "## CORE PRINCIPLES"
+    insertion_index = base_prompt.find(insertion_point)
+    if insertion_index != -1:
+        # Find the end of CORE PRINCIPLES section (before "---")
+        next_section = base_prompt.find("---", insertion_index + len(insertion_point))
+        if next_section != -1:
+            # Insert class guidance before the next section
+            modified_prompt = (
+                base_prompt[:next_section] +
+                class_guidance +
+                base_prompt[next_section:]
+            )
+            return modified_prompt
+    
+    # Fallback: append at the end if insertion fails
+    return base_prompt + class_guidance
+
+
+# Class-specific prompt modifications
+SYNTHESIS_PROMPT_CONSERVATIVE = get_synthesis_prompt("conservative")
+SYNTHESIS_PROMPT_MOMENTUM = get_synthesis_prompt("momentum")
+SYNTHESIS_PROMPT_HISTORICAL = get_synthesis_prompt("historical")
+SYNTHESIS_PROMPT_REALTIME = get_synthesis_prompt("realtime")
+SYNTHESIS_PROMPT_BALANCED = get_synthesis_prompt("balanced")

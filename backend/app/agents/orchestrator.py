@@ -29,7 +29,7 @@ class AgentOrchestrator:
     Phase 4: Synthesis (1 agent)
     """
 
-    def __init__(self, session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None):
+    def __init__(self, session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None, forecaster_class: str = "balanced"):
         logger.info("=" * 60)
         logger.info(f"[ORCHESTRATOR] Initializing AgentOrchestrator")
         logger.info(f"[ORCHESTRATOR] Session ID: {session_id}")
@@ -38,21 +38,47 @@ class AgentOrchestrator:
         self.session_id = session_id
         self.question_text = question_text
         
-        # Agent counts configuration (defaults to standard 24-agent setup)
+        # Forecaster class configuration
+        from app.agents.prompts import FORECASTER_CLASSES
+        if forecaster_class not in FORECASTER_CLASSES:
+            logger.warning(f"[ORCHESTRATOR] Unknown forecaster_class '{forecaster_class}', defaulting to 'balanced'")
+            forecaster_class = "balanced"
+        self.forecaster_class = forecaster_class
+        class_info = FORECASTER_CLASSES[forecaster_class]
+        logger.info(f"[ORCHESTRATOR] Forecaster class: {forecaster_class} - {class_info['name']}")
+        logger.info(f"[ORCHESTRATOR] Description: {class_info['description']}")
+        
+        # Agent counts configuration
+        # If agent_counts provided, use them; otherwise use forecaster class defaults
         if agent_counts:
             logger.info(f"[ORCHESTRATOR] Agent counts provided: {agent_counts}")
-            self.phase_1_count = agent_counts.get("phase_1_discovery", 10)
-            self.phase_2_count = agent_counts.get("phase_2_validation", 2)  # Always 2 (validator, rating_consensus merged)
-            self.phase_3_count = agent_counts.get("phase_3_research", 10)  # Split into historical + current
-            self.phase_4_count = agent_counts.get("phase_4_synthesis", 1)  # Always 1
+            self.phase_1_count = agent_counts.get("phase_1_discovery", class_info["default_agent_counts"]["phase_1_discovery"])
+            self.phase_2_count = agent_counts.get("phase_2_validation", class_info["default_agent_counts"]["phase_2_validation"])
+            # Phase 3: Support separate historical/current counts
+            # Backward compatibility: if phase_3_research is provided but not historical/current, split 50/50
+            if "phase_3_research" in agent_counts and "phase_3_historical" not in agent_counts and "phase_3_current" not in agent_counts:
+                total_research = agent_counts["phase_3_research"]
+                self.phase_3_historical_count = total_research // 2
+                self.phase_3_current_count = total_research - self.phase_3_historical_count
+                self.phase_3_count = total_research
+                logger.info(f"[ORCHESTRATOR] Using backward-compatible phase_3_research split: {self.phase_3_historical_count} historical, {self.phase_3_current_count} current")
+            else:
+                # Use provided historical/current counts or defaults
+                self.phase_3_historical_count = agent_counts.get("phase_3_historical", class_info["default_agent_counts"]["phase_3_historical"])
+                self.phase_3_current_count = agent_counts.get("phase_3_current", class_info["default_agent_counts"]["phase_3_current"])
+                self.phase_3_count = self.phase_3_historical_count + self.phase_3_current_count
+            self.phase_4_count = agent_counts.get("phase_4_synthesis", class_info["default_agent_counts"]["phase_4_synthesis"])
         else:
-            logger.info("[ORCHESTRATOR] Using default agent counts")
-            self.phase_1_count = 10
-            self.phase_2_count = 2
-            self.phase_3_count = 10
-            self.phase_4_count = 1
+            logger.info(f"[ORCHESTRATOR] Using forecaster class defaults for '{forecaster_class}'")
+            defaults = class_info["default_agent_counts"]
+            self.phase_1_count = defaults["phase_1_discovery"]
+            self.phase_2_count = defaults["phase_2_validation"]
+            self.phase_3_historical_count = defaults["phase_3_historical"]
+            self.phase_3_current_count = defaults["phase_3_current"]
+            self.phase_3_count = self.phase_3_historical_count + self.phase_3_current_count
+            self.phase_4_count = defaults["phase_4_synthesis"]
         
-        logger.info(f"[ORCHESTRATOR] Phase counts: P1={self.phase_1_count}, P2={self.phase_2_count}, P3={self.phase_3_count}, P4={self.phase_4_count}")
+        logger.info(f"[ORCHESTRATOR] Phase counts: P1={self.phase_1_count}, P2={self.phase_2_count}, P3={self.phase_3_count} ({self.phase_3_historical_count} historical + {self.phase_3_current_count} current), P4={self.phase_4_count}")
         
         # Initialize repositories
         logger.info("[ORCHESTRATOR] Initializing repositories: SessionRepository, AgentLogRepository, FactorRepository")
@@ -436,9 +462,9 @@ class AgentOrchestrator:
         # Agents will be distributed across factors using modulo
         factors_to_research = top_factors
         
-        # Split research agents: half historical, half current
-        num_historical = self.phase_3_count // 2
-        num_current = self.phase_3_count - num_historical
+        # Use configured historical/current counts
+        num_historical = self.phase_3_historical_count
+        num_current = self.phase_3_current_count
         
         # Run historical research agents (distribute across factors)
         historical_tasks = [
@@ -578,8 +604,8 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
                 ]
             }
             
-            logger.info("[PHASE 4] Creating SynthesisAgent")
-            synthesizer = SynthesisAgent(session_id=self.session_id)
+            logger.info(f"[PHASE 4] Creating SynthesisAgent with forecaster_class: {self.forecaster_class}")
+            synthesizer = SynthesisAgent(session_id=self.session_id, forecaster_class=self.forecaster_class)
             
             logger.info("[PHASE 4] Executing synthesizer")
             output = await synthesizer.execute({

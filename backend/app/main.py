@@ -41,16 +41,19 @@ app.add_middleware(
 # Request/Response Models
 class AgentCounts(BaseModel):
     """Agent counts for each phase"""
-    phase_1_discovery: int = 10  # Discovery agents
-    phase_2_validation: int = 3   # Validation agents (always 3: validator, rater, consensus)
-    phase_3_research: int = 10    # Research agents (5 historical + 5 current)
-    phase_4_synthesis: int = 1    # Synthesis agent (always 1)
+    phase_1_discovery: Optional[int] = None  # Discovery agents
+    phase_2_validation: Optional[int] = None  # Validation agents (always 2: validator, rating_consensus)
+    phase_3_research: Optional[int] = None  # Research agents (backward compatibility - will split 50/50 if phase_3_historical/current not provided)
+    phase_3_historical: Optional[int] = None  # Historical research agents
+    phase_3_current: Optional[int] = None  # Current research agents
+    phase_4_synthesis: Optional[int] = None  # Synthesis agent (always 1)
 
 
 class ForecastRequest(BaseModel):
     question_text: str
     question_type: str = "binary"  # binary, numeric, categorical
     agent_counts: Optional[AgentCounts] = None  # Optional agent counts (defaults to standard 24-agent setup)
+    forecaster_class: str = "balanced"  # One of: "conservative", "momentum", "historical", "realtime", "balanced"
 
 
 class ForecastResponse(BaseModel):
@@ -67,7 +70,7 @@ async def health_check():
     return {"status": "healthy", "service": "superforecaster-api"}
 
 
-async def run_orchestrator(session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None):
+async def run_orchestrator(session_id: str, question_text: str, agent_counts: Optional[Dict[str, int]] = None, forecaster_class: str = "balanced"):
     """Run the agent orchestrator in background"""
     logger.info(f"[BACKGROUND TASK] Starting orchestrator for session {session_id}")
     logger.info(f"[BACKGROUND TASK] Question: {question_text[:100]}...")
@@ -75,10 +78,11 @@ async def run_orchestrator(session_id: str, question_text: str, agent_counts: Op
         logger.info(f"[BACKGROUND TASK] Agent counts: {agent_counts}")
     else:
         logger.info("[BACKGROUND TASK] Using default agent counts (10, 3, 10, 1)")
+    logger.info(f"[BACKGROUND TASK] Forecaster class: {forecaster_class}")
     
     try:
         logger.info(f"[BACKGROUND TASK] Creating AgentOrchestrator instance")
-        orchestrator = AgentOrchestrator(session_id, question_text, agent_counts=agent_counts)
+        orchestrator = AgentOrchestrator(session_id, question_text, agent_counts=agent_counts, forecaster_class=forecaster_class)
         logger.info(f"[BACKGROUND TASK] Calling orchestrator.run()")
         await orchestrator.run()
         logger.info(f"[BACKGROUND TASK] Orchestrator completed successfully for session {session_id}")
@@ -95,6 +99,15 @@ async def create_forecast(request: ForecastRequest, background_tasks: Background
     logger.info("POST /api/forecasts - Creating new forecast")
     logger.info(f"Question: {request.question_text[:100]}...")
     logger.info(f"Question type: {request.question_type}")
+    logger.info(f"Forecaster class: {request.forecaster_class}")
+    
+    # Validate forecaster_class
+    from app.agents.prompts import FORECASTER_CLASSES
+    if request.forecaster_class not in FORECASTER_CLASSES:
+        logger.warning(f"Invalid forecaster_class '{request.forecaster_class}', defaulting to 'balanced'")
+        forecaster_class = "balanced"
+    else:
+        forecaster_class = request.forecaster_class
     
     # Create session in database
     logger.info("Calling SessionRepository.create_session()")
@@ -111,19 +124,29 @@ async def create_forecast(request: ForecastRequest, background_tasks: Background
     agent_counts = None
     if request.agent_counts:
         logger.info("Agent counts provided in request")
-        agent_counts = {
-            "phase_1_discovery": request.agent_counts.phase_1_discovery,
-            "phase_2_validation": request.agent_counts.phase_2_validation,
-            "phase_3_research": request.agent_counts.phase_3_research,
-            "phase_4_synthesis": request.agent_counts.phase_4_synthesis,
-        }
-        logger.info(f"Agent counts: Phase1={agent_counts['phase_1_discovery']}, Phase2={agent_counts['phase_2_validation']}, Phase3={agent_counts['phase_3_research']}, Phase4={agent_counts['phase_4_synthesis']}")
+        agent_counts = {}
+        if request.agent_counts.phase_1_discovery is not None:
+            agent_counts["phase_1_discovery"] = request.agent_counts.phase_1_discovery
+        if request.agent_counts.phase_2_validation is not None:
+            agent_counts["phase_2_validation"] = request.agent_counts.phase_2_validation
+        # Support new separate historical/current counts
+        if request.agent_counts.phase_3_historical is not None:
+            agent_counts["phase_3_historical"] = request.agent_counts.phase_3_historical
+        if request.agent_counts.phase_3_current is not None:
+            agent_counts["phase_3_current"] = request.agent_counts.phase_3_current
+        # Backward compatibility: if phase_3_research provided but not historical/current, use it
+        if request.agent_counts.phase_3_research is not None and "phase_3_historical" not in agent_counts:
+            agent_counts["phase_3_research"] = request.agent_counts.phase_3_research
+        if request.agent_counts.phase_4_synthesis is not None:
+            agent_counts["phase_4_synthesis"] = request.agent_counts.phase_4_synthesis
+        
+        logger.info(f"Agent counts: {agent_counts}")
     else:
-        logger.info("No agent counts provided, using defaults")
+        logger.info("No agent counts provided, using forecaster class defaults")
     
     # Start orchestrator in background
     logger.info("Adding orchestrator to background tasks")
-    background_tasks.add_task(run_orchestrator, session_id, request.question_text, agent_counts)
+    background_tasks.add_task(run_orchestrator, session_id, request.question_text, agent_counts, forecaster_class)
     logger.info("=" * 60)
 
     # Parse created_at (handle both ISO format and string)

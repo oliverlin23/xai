@@ -12,7 +12,8 @@ export default function SuperforecastPage() {
   const handleSubmit = async (
     questionText: string,
     questionType: string,
-    agentCounts?: { phase_1_discovery: number; phase_2_validation: number; phase_3_research: number; phase_4_synthesis: number }
+    agentCounts?: { phase_1_discovery?: number; phase_2_validation?: number; phase_3_research?: number; phase_3_historical?: number; phase_3_current?: number; phase_4_synthesis?: number },
+    forecasterClass?: string
   ) => {
     setIsSubmitting(true)
 
@@ -22,8 +23,14 @@ export default function SuperforecastPage() {
         question_type: questionType,
       }
       
-      // Add agent_counts if provided
-      if (agentCounts) {
+      // Add forecaster_class if provided
+      if (forecasterClass) {
+        requestBody.forecaster_class = forecasterClass
+      }
+      
+      // Only send agent_counts if forecaster_class is "balanced" (or not set)
+      // Other classes use their own optimized defaults
+      if (agentCounts && (!forecasterClass || forecasterClass === "balanced")) {
         requestBody.agent_counts = agentCounts
       }
 
