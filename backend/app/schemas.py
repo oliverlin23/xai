@@ -113,11 +113,15 @@ class ForecastResponse(BaseModel):
     id: str
     question_text: str
     question_type: str
-    status: str
-    current_phase: Optional[str]
+    status: str  # Inferred from completed_at: "running" if None, "completed" otherwise
     prediction_result: Optional[Dict[str, Any]]
     factors: List[FactorSchema]
     agent_logs: List[AgentLogSchema]
-    total_cost_tokens: int
     created_at: datetime
     completed_at: Optional[datetime]
+    # Optional fields from forecaster_responses
+    prediction_probability: Optional[float] = None
+    confidence: Optional[float] = None
+    total_duration_seconds: Optional[float] = None
+    total_duration_formatted: Optional[str] = None
+    forecaster_responses: Optional[List[Dict[str, Any]]] = None

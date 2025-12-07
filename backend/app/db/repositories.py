@@ -82,97 +82,62 @@ class SessionRepository(BaseRepository):
         logger.info(f"[DB] SessionRepository.create_session() called")
         logger.info(f"[DB] Question: {question_text[:50]}...")
         logger.info(f"[DB] Type: {question_type}")
+        # Only include columns that exist in the sessions table:
+        # id, question_text, question_type, created_at, started_at, completed_at,
+        # prediction_probability, confidence, total_duration_seconds
         data = {
             "question_text": question_text,
             "question_type": question_type,
-            "status": "running",
-            "current_phase": "factor_discovery",
             "started_at": datetime.utcnow().isoformat(),
-            "total_cost_tokens": 0,
         }
         logger.info(f"[DB] Calling QueryBuilder.create() on 'sessions' table")
         result = self.create(data)
         logger.info(f"[DB] Session created with ID: {result.get('id')}")
         return result
     
-    def update_status(
+    def mark_completed(
         self,
         session_id: str,
-        status: str,
-        phase: Optional[str] = None,
-        error_message: Optional[str] = None
+        prediction_probability: Optional[float] = None,
+        confidence: Optional[float] = None,
+        total_duration_seconds: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        Update session status and optionally phase.
-        Note: Prediction results are now stored in forecaster_responses table.
+        Mark session as completed with optional prediction results.
         
         Args:
             session_id: Session ID
-            status: New status (running, completed, failed)
-            phase: Optional phase name
-            error_message: Optional error message if failed
+            prediction_probability: Probability of the event (0.0-1.0)
+            confidence: Confidence in the probability (0.0-1.0)
+            total_duration_seconds: Total execution time
         
         Returns:
             Updated session record
         """
-        data = {"status": status}
+        data = {"completed_at": datetime.utcnow().isoformat()}
         
-        if phase:
-            data["current_phase"] = phase
+        if prediction_probability is not None:
+            data["prediction_probability"] = prediction_probability
         
-        if error_message:
-            data["error_message"] = error_message
+        if confidence is not None:
+            data["confidence"] = confidence
         
-        if status in ["completed", "failed"]:
-            data["completed_at"] = datetime.utcnow().isoformat()
+        if total_duration_seconds is not None:
+            data["total_duration_seconds"] = total_duration_seconds
         
         return self.update(session_id, data)
     
-    def add_tokens(self, session_id: str, tokens: int) -> Dict[str, Any]:
+    def get_session_status(self, session_id: str) -> str:
         """
-        Add tokens to session total
-        
-        WARNING: This has a race condition when called from parallel agents.
-        Use add_tokens_batch() or increment_tokens() for concurrent updates.
-        
-        Args:
-            session_id: Session ID
-            tokens: Number of tokens to add
+        Get session status based on completed_at field.
         
         Returns:
-            Updated session record
+            'completed' if completed_at is set, 'running' otherwise
         """
         session = self.find_by_id(session_id)
-        if session:
-            current_tokens = session.get("total_cost_tokens", 0)
-            return self.update(session_id, {
-                "total_cost_tokens": current_tokens + tokens
-            })
-        return session
-    
-    def increment_tokens(self, session_id: str, tokens: int) -> Dict[str, Any]:
-        """
-        Atomically increment tokens using SQL increment (thread-safe)
-        
-        This avoids race conditions when multiple agents update tokens concurrently.
-        
-        Args:
-            session_id: Session ID
-            tokens: Number of tokens to add
-        
-        Returns:
-            Updated session record
-        """
-        # Use Supabase RPC or direct SQL increment
-        # For now, use a workaround: read current value and update
-        # TODO: Implement proper atomic increment via Supabase RPC function
-        session = self.find_by_id(session_id)
-        if session:
-            current_tokens = session.get("total_cost_tokens", 0)
-            return self.update(session_id, {
-                "total_cost_tokens": current_tokens + tokens
-            })
-        return session
+        if not session:
+            return "not_found"
+        return "completed" if session.get("completed_at") else "running"
 
 
 class AgentLogRepository(BaseRepository):

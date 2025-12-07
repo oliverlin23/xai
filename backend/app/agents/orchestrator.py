@@ -201,12 +201,13 @@ class AgentOrchestrator:
                 else:
                     final_prediction["total_duration_formatted"] = f"{seconds}s"
 
-            # Update session status (without prediction data)
-            logger.info("[ORCHESTRATOR] Updating session status to 'completed'")
-            self.session_repo.update_status(
+            # Mark session as completed
+            logger.info("[ORCHESTRATOR] Marking session as completed")
+            self.session_repo.mark_completed(
                 session_id=self.session_id,
-                status="completed",
-                phase="synthesis"
+                prediction_probability=final_prediction.get("prediction_probability"),
+                confidence=final_prediction.get("confidence"),
+                total_duration_seconds=round(workflow_duration, 2)
             )
             
             # Update forecaster response with prediction results
@@ -246,11 +247,10 @@ class AgentOrchestrator:
                 error_data["total_duration_formatted"] = f"{minutes}m {seconds}s"
             else:
                 error_data["total_duration_formatted"] = f"{seconds}s"
-            # Update session status
-            self.session_repo.update_status(
+            # Mark session as completed (with duration recorded even on failure)
+            self.session_repo.mark_completed(
                 session_id=self.session_id,
-                status="failed",
-                error_message=str(e)
+                total_duration_seconds=round(workflow_duration, 2)
             )
             
             # Update forecaster response with error
@@ -677,26 +677,19 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
         error: str = None
     ):
         """
-        Update session status and phase (without prediction data).
-        Prediction data is now stored in forecaster_responses table.
-        
-        DB Operation: UPDATE sessions
-        See: app/agents/db_mapping.py for detailed documentation
+        Update session status and phase.
+        NOTE: The sessions table only stores question_text, question_type, timestamps, 
+        and prediction results. Status is inferred from completed_at being set.
         
         Args:
-            status: Session status (running, completed, failed)
-            phase: Optional phase name
-            error: Optional error message
+            status: Session status (running, completed, failed) - logged only
+            phase: Optional phase name - logged only
+            error: Optional error message - logged only
         """
-        self.session_repo.update_status(
-            session_id=self.session_id,
-            status=status,
-            phase=phase,
-            error_message=error
-        )
-        
-        # Note: Error handling would go here if needed
-        # For now, errors are handled at the agent log level
+        # Log status changes but don't store in DB (columns don't exist)
+        logger.info(f"[SESSION] Status update: {status}, phase: {phase}")
+        if error:
+            logger.warning(f"[SESSION] Error: {error}")
 
     def create_agent_log(self, agent_name: str, phase: str) -> str:
         """

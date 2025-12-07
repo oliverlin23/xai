@@ -267,16 +267,17 @@ async def get_forecast(forecast_id: str):
         phase_durations = primary_response.get("phase_durations")
     
     # Format response
+    # Note: status is inferred from completed_at, not stored in DB
+    status = "completed" if session.get("completed_at") else "running"
+    
     response = {
         "id": session["id"],
         "question_text": session["question_text"],
         "question_type": session["question_type"],
-        "status": session["status"],
-        "current_phase": session.get("current_phase"),
+        "status": status,
         "prediction_result": prediction_result,
         "factors": factors,
         "agent_logs": agent_logs,
-        "total_cost_tokens": session.get("total_cost_tokens", 0),
         "created_at": session["created_at"],
         "completed_at": session.get("completed_at"),
         "forecaster_responses": forecaster_responses  # Include all responses for future use
@@ -597,6 +598,37 @@ async def stop_simulation(session_id: str):
         stopped=True,
         message="Simulation stop requested. It will stop after the current round completes.",
     )
+
+
+@app.get("/api/sessions/{session_id}/orderbook")
+async def get_orderbook(session_id: str):
+    """
+    Get the current order book for a session.
+    Returns aggregated bids and asks sorted by price.
+    """
+    logger.info(f"GET /api/sessions/{session_id}/orderbook")
+    
+    from app.market import SupabaseMarketMaker
+    
+    market_maker = SupabaseMarketMaker()
+    orderbook = market_maker.get_orderbook(session_id)
+    
+    return orderbook
+
+
+@app.get("/api/sessions/{session_id}/trades")
+async def get_trades(session_id: str, limit: int = 50):
+    """
+    Get recent trades for a session.
+    """
+    logger.info(f"GET /api/sessions/{session_id}/trades (limit={limit})")
+    
+    from app.market import SupabaseMarketMaker
+    
+    market_maker = SupabaseMarketMaker()
+    trades = market_maker.get_recent_trades(session_id, limit=limit)
+    
+    return {"trades": trades}
 
 
 @app.get("/api/forecasts")

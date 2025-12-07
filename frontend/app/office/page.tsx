@@ -1,13 +1,11 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, Suspense, useCallback } from "react"
 import { useTradingStore } from "@/lib/store"
-import { useDemoMode } from "@/hooks/useDemoMode"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { api } from "@/lib/api"
-import { Forecast, ForecasterResponse } from "@/types/forecast"
-import { FORECASTER_CLASSES } from "@/lib/forecasterClasses"
+import { useRealtimeTrades, Trade, TraderState } from "@/hooks/useRealtimeTrades"
 import { Press_Start_2P } from "next/font/google"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
@@ -23,7 +21,43 @@ const workerSprites = [
   "/sprites/worker2.png",
 ]
 
-const roles = ["Trader", "Quant", "Analyst", "Execution"]
+// All 18 agents in order
+const AGENT_CONFIG = {
+  // 5 Fundamental Traders
+  fundamental: {
+    conservative: { name: "Conservative", role: "Fundamental", description: "Risk-averse, anchors to base rates" },
+    momentum: { name: "Momentum", role: "Fundamental", description: "Follows market trends and price action" },
+    historical: { name: "Historical", role: "Fundamental", description: "Relies on precedent and base rates" },
+    balanced: { name: "Balanced", role: "Fundamental", description: "Weighs multiple perspectives equally" },
+    realtime: { name: "Realtime", role: "Fundamental", description: "Highly responsive to new information" },
+  },
+  // 9 Noise Traders (X spheres)
+  noise: {
+    eacc_sovereign: { name: "e/acc Sovereign", role: "Noise", description: "Tech accelerationism sphere" },
+    america_first: { name: "America First", role: "Noise", description: "Conservative populist sphere" },
+    blue_establishment: { name: "Blue Establishment", role: "Noise", description: "Democratic establishment sphere" },
+    progressive_left: { name: "Progressive Left", role: "Noise", description: "Progressive activism sphere" },
+    optimizer_idw: { name: "Optimizer IDW", role: "Noise", description: "Intellectual dark web sphere" },
+    fintwit_market: { name: "FinTwit Market", role: "Noise", description: "Financial Twitter sphere" },
+    builder_engineering: { name: "Builder Engineering", role: "Noise", description: "Engineering & builder sphere" },
+    academic_research: { name: "Academic Research", role: "Noise", description: "Academic and research sphere" },
+    osint_intel: { name: "OSINT Intel", role: "Noise", description: "Open source intelligence sphere" },
+  },
+  // 4 User Agents
+  user: {
+    oliver: { name: "Oliver", role: "User", description: "Tracks Oliver's X account" },
+    owen: { name: "Owen", role: "User", description: "Tracks Owen's X account" },
+    skylar: { name: "Skylar", role: "User", description: "Tracks Skylar's X account" },
+    tyler: { name: "Tyler", role: "User", description: "Tracks Tyler's X account" },
+  },
+}
+
+// Flatten to ordered list
+const ALL_AGENTS = [
+  ...Object.entries(AGENT_CONFIG.fundamental).map(([key, val]) => ({ key, ...val, type: "fundamental" })),
+  ...Object.entries(AGENT_CONFIG.noise).map(([key, val]) => ({ key, ...val, type: "noise" })),
+  ...Object.entries(AGENT_CONFIG.user).map(([key, val]) => ({ key, ...val, type: "user" })),
+]
 
 const statusStyles = {
   idle: { label: "Active", className: "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.45)]" },
@@ -32,31 +66,16 @@ const statusStyles = {
   offline: { label: "Offline", className: "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.45)]" },
 }
 
-const demoOrderBook = {
-  asks: [
-    { price: 0.44, size: 1200 },
-    { price: 0.36, size: 950 },
-    { price: 0.35, size: 820 },
-    { price: 0.33, size: 640 },
-  ],
-  bids: [
-    { price: 0.30, size: 1180 },
-    { price: 0.29, size: 980 },
-    { price: 0.28, size: 840 },
-    { price: 0.27, size: 710 },
-  ],
-}
-
 const PartitionFrame = () => (
   <>
     <img
       src="/sprites/office-partitions-1.png"
-      className="absolute -top-6 left-0 w-full h-full object-contain pixelated opacity-80pointer-events-none z-10"
+      className="absolute -top-6 left-0 w-full h-full object-contain pixelated opacity-80 pointer-events-none z-10"
       alt="partition top"
     />
     <img
       src="/sprites/office-partitions-2.png"
-      className="absolute -top-6 right-1/2 w-full h-full object-contain pixelated opacity-80pointer-events-none z-10"
+      className="absolute -top-6 right-1/2 w-full h-full object-contain pixelated opacity-80 pointer-events-none z-10"
       alt="partition left"
     />
   </>
@@ -68,8 +87,7 @@ const Cubicle = ({
   role,
   status,
   description,
-  probability,
-  confidence,
+  prediction,
   onClick,
   hasPlant = false,
   hasTrash = false,
@@ -79,8 +97,7 @@ const Cubicle = ({
   role: string
   status: keyof typeof statusStyles
   description?: string
-  probability?: number
-  confidence?: number
+  prediction?: number
   onClick?: () => void
   hasPlant?: boolean
   hasTrash?: boolean
@@ -96,7 +113,7 @@ const Cubicle = ({
         className="absolute inset-4 group cursor-pointer"
         onClick={onClick}
       >
-        {/* Hover card - expanded to show description */}
+        {/* Hover card */}
         <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-40 px-3 py-2 rounded-md bg-slate-900/90 border border-white/10 shadow-lg text-xs text-slate-100 opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-w-xs">
           <div className="font-semibold mb-1">{name}</div>
           <div className="text-[11px] text-slate-300 mb-1">Role: {role}</div>
@@ -105,21 +122,13 @@ const Cubicle = ({
               {description}
             </div>
           )}
-          {(probability !== undefined || confidence !== undefined) && (
+          {prediction !== undefined && (
             <div className="mt-2 pt-2 border-t border-white/10">
-              {probability !== undefined && (
-                <div className="text-[10px] text-slate-300">
-                  Probability: {Math.round(probability * 100)}%
-                </div>
-              )}
-              {confidence !== undefined && (
-                <div className="text-[10px] text-blue-300">
-                  Confidence: {Math.round(confidence * 100)}%
-                </div>
-              )}
+              <div className="text-[10px] text-emerald-300">
+                Last Prediction: {prediction}¢
+              </div>
             </div>
           )}
-          <div className="text-[9px] text-slate-500 mt-2 italic">Click for details</div>
         </div>
 
         {/* Worker */}
@@ -154,69 +163,41 @@ const Cubicle = ({
   )
 }
 
-const OfficeScene = ({ 
-  forecasterResponses, 
-  onForecasterClick 
-}: { 
-  forecasterResponses: ForecasterResponse[]
-  onForecasterClick: (response: ForecasterResponse) => void
-}) => {
-  // Map the 5 forecaster responses to cubicles (first 5 positions)
-  // Fill remaining with placeholders
-  type AgentInfo = {
-    id: string
-    name: string
-    role: string
-    status: "idle" | "analyzing" | "offline"
-    description?: string
-    probability?: number
-    confidence?: number
-    response?: ForecasterResponse
-  }
-  
-  const activeAgents: AgentInfo[] = Array.from({ length: 18 }, (_, i) => {
-    if (forecasterResponses[i]) {
-      const response = forecasterResponses[i]
-      const classInfo = FORECASTER_CLASSES[response.forecaster_class as keyof typeof FORECASTER_CLASSES]
-      return {
-        id: response.id,
-        name: classInfo?.name || response.forecaster_class,
-        role: "Forecaster",
-        status: response.status === "completed" ? "idle" as const : 
-                response.status === "running" ? "analyzing" as const : 
-                "offline" as const,
-        description: classInfo?.description || "",
-        probability: response.prediction_probability,
-        confidence: response.confidence,
-        response: response,
-      }
-    }
-    return {
-      id: `placeholder-${i}`,
-      name: `Agent ${i + 1}`,
-      role: roles[i % roles.length],
-      status: "idle" as const,
-    }
-  })
+interface AgentInfo {
+  key: string
+  name: string
+  role: string
+  type: string
+  description: string
+  status: "idle" | "analyzing" | "offline"
+  prediction?: number
+  traderState?: TraderState
+}
 
+const OfficeScene = ({ 
+  agents,
+  onAgentClick,
+}: { 
+  agents: AgentInfo[]
+  onAgentClick: (agent: AgentInfo) => void
+}) => {
   return (
     <div className="relative w-full h-full flex items-center justify-center p-0">
       <div className="relative z-10 w-full h-full flex flex-col justify-between">
         {/* Main Office Floor */}
         <div className="flex-1 flex items-center justify-center gap-52 px-6 pt-48">
-          {/* Left Bank */}
+          {/* Left Bank - First 9 agents */}
           <div className="grid grid-cols-3 gap-x-0 gap-y-0">
-            {activeAgents.slice(0, 9).map((agent, i) => (
-              <div key={agent.id} className="flex justify-center">
+            {agents.slice(0, 9).map((agent, i) => (
+              <div key={agent.key} className="flex justify-center">
                 <Cubicle
                   sprite={workerSprites[i % workerSprites.length]}
                   name={agent.name}
                   role={agent.role}
                   status={agent.status}
                   description={agent.description}
-                  probability={agent.probability}
-                  confidence={agent.confidence}
-                  onClick={agent.response ? () => onForecasterClick(agent.response) : undefined}
+                  prediction={agent.prediction}
+                  onClick={() => onAgentClick(agent)}
                   hasPlant={false}
                   hasTrash={i % 4 === 1}
                 />
@@ -224,21 +205,20 @@ const OfficeScene = ({
             ))}
           </div>
 
-          {/* Right Bank */}
+          {/* Right Bank - Next 9 agents */}
           <div className="grid grid-cols-3 gap-x-0 gap-y-0">
-            {activeAgents.slice(9, 18).map((agent, i) => {
+            {agents.slice(9, 18).map((agent, i) => {
               const idx = i + 9
               return (
-                <div key={agent.id} className="flex justify-center">
+                <div key={agent.key} className="flex justify-center">
                   <Cubicle
                     sprite={workerSprites[idx % workerSprites.length]}
                     name={agent.name}
                     role={agent.role}
                     status={agent.status}
                     description={agent.description}
-                    probability={agent.probability}
-                    confidence={agent.confidence}
-                    onClick={agent.response ? () => onForecasterClick(agent.response) : undefined}
+                    prediction={agent.prediction}
+                    onClick={() => onAgentClick(agent)}
                     hasPlant={false}
                     hasTrash={idx % 4 === 1}
                   />
@@ -247,21 +227,177 @@ const OfficeScene = ({
             })}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
 
-        {/*
-        <div className="relative pt-6 mt-6 flex justify-center pb-6">
-
-          <div className="relative">
-            <Cubicle
-              sprite="/sprites/boss.png"
-              name="Director Joja"
-              role="Overseer"
-              status="analyzing"
-              hasPlant
-            />
-          </div>
+const TradeFeed = ({ trades }: { trades: Trade[] }) => {
+  const recentTrades = trades.slice(-20).reverse()
+  
+  return (
+    <div className="absolute top-4 right-4 w-72 max-h-[400px] overflow-hidden rounded-lg border-2 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-lg z-40">
+      <div className="px-3 py-2 border-b border-[#2d3748] bg-[#1a1f2e]">
+        <div className="text-sm font-semibold tracking-wider flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          Live Trade Feed
         </div>
-        */}
+      </div>
+      <div className="overflow-y-auto max-h-[350px]">
+        {recentTrades.length === 0 ? (
+          <div className="px-3 py-4 text-center text-slate-500 text-xs">
+            No trades yet...
+          </div>
+        ) : (
+          recentTrades.map((trade) => (
+            <div key={trade.id} className="px-3 py-2 border-b border-[#2d3748]/50 hover:bg-[#1a1f2e]/50">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-emerald-400 font-medium">{trade.price}¢</span>
+                <span className="text-slate-400">×{trade.quantity}</span>
+              </div>
+              <div className="flex justify-between items-center text-[10px] text-slate-500 mt-0.5">
+                <span className="truncate max-w-[100px]">{trade.buyer_name}</span>
+                <span>→</span>
+                <span className="truncate max-w-[100px]">{trade.seller_name}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+const SimulationControls = ({
+  sessionId,
+  isRunning,
+  roundNumber,
+  onStop,
+  questionText,
+}: {
+  sessionId: string | null
+  isRunning: boolean
+  roundNumber: number
+  onStop: () => void
+  questionText: string
+}) => {
+  return (
+    <div className="absolute top-4 left-4 w-80 rounded-lg border-2 border-[#2d3748] bg-[#0f172a]/95 text-[#f7f5f0] shadow-lg z-40">
+      <div className="px-3 py-2 border-b border-[#2d3748] bg-[#1a1f2e]">
+        <div className="text-sm font-semibold tracking-wider">Simulation</div>
+      </div>
+      <div className="p-3 space-y-2">
+        {questionText && (
+          <div className="text-xs text-slate-300 leading-relaxed line-clamp-2">
+            {questionText}
+          </div>
+        )}
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-400">Status:</span>
+          <span className={isRunning ? "text-green-400" : "text-slate-500"}>
+            {isRunning ? "Running" : "Stopped"}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-400">Round:</span>
+          <span className="text-blue-400">{roundNumber}</span>
+        </div>
+        {sessionId && (
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-400">Session:</span>
+            <span className="text-slate-500 font-mono text-[10px]">{sessionId.slice(0, 8)}...</span>
+          </div>
+        )}
+        {isRunning && (
+          <button
+            onClick={onStop}
+            className="w-full mt-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+          >
+            Stop Simulation
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const AgentDetailModal = ({
+  agent,
+  onClose,
+}: {
+  agent: AgentInfo
+  onClose: () => void
+}) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-2xl bg-[#1a1f2e] border-4 border-[#2d3748] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.75)] p-6 text-white max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl font-bold"
+        >
+          ×
+        </button>
+        
+        <h2 className={`${pressStart.className} text-xl tracking-[0.15em] uppercase mb-4 text-[#f7f5f0]`}>
+          {agent.name}
+        </h2>
+        
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <span className={`px-2 py-1 rounded text-xs ${
+              agent.type === "fundamental" ? "bg-blue-900/50 text-blue-300" :
+              agent.type === "noise" ? "bg-purple-900/50 text-purple-300" :
+              "bg-emerald-900/50 text-emerald-300"
+            }`}>
+              {agent.type.toUpperCase()}
+            </span>
+            <span className="text-sm text-slate-400">{agent.role} Agent</span>
+          </div>
+
+          <p className="text-gray-300 leading-relaxed">{agent.description}</p>
+
+          {agent.traderState && (
+            <div className="p-4 bg-[#0f172a]/50 rounded-lg border border-[#2d3748]">
+              <h3 className="text-sm font-semibold mb-3 text-slate-300">Trading State</h3>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <div className="text-slate-500 text-xs">Position</div>
+                  <div className={agent.traderState.position >= 0 ? "text-green-400" : "text-red-400"}>
+                    {agent.traderState.position}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-xs">Cash</div>
+                  <div className="text-slate-300">${agent.traderState.cash.toFixed(2)}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-xs">P&L</div>
+                  <div className={agent.traderState.pnl >= 0 ? "text-green-400" : "text-red-400"}>
+                    ${agent.traderState.pnl.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+              
+              {agent.traderState.system_prompt && (
+                <div className="mt-4 pt-4 border-t border-[#2d3748]">
+                  <div className="text-slate-500 text-xs mb-2">Agent Notes</div>
+                  <pre className="text-[11px] text-slate-400 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {agent.traderState.system_prompt}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+
+          {agent.prediction !== undefined && (
+            <div className="text-center py-4">
+              <div className="text-slate-500 text-sm mb-1">Last Prediction</div>
+              <div className={`${pressStart.className} text-4xl text-emerald-400`}>
+                {agent.prediction}¢
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -270,14 +406,39 @@ const OfficeScene = ({
 const OrderBookModal = ({
   open,
   onClose,
+  sessionId,
 }: {
   open: boolean
   onClose: () => void
+  sessionId: string | null
 }) => {
+  const [orderBook, setOrderBook] = useState<{ bids: any[], asks: any[] }>({ bids: [], asks: [] })
+  
+  useEffect(() => {
+    if (!open || !sessionId) return
+    
+    // Fetch orderbook from API
+    const fetchOrderBook = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/sessions/${sessionId}/orderbook`)
+        if (response.ok) {
+          const data = await response.json()
+          setOrderBook(data)
+        }
+      } catch (error) {
+        console.error("Error fetching orderbook:", error)
+      }
+    }
+    
+    fetchOrderBook()
+    const interval = setInterval(fetchOrderBook, 2000)
+    return () => clearInterval(interval)
+  }, [open, sessionId])
+  
   if (!open) return null
 
-  const maxAskSize = Math.max(...demoOrderBook.asks.map((a) => a.size), 1)
-  const maxBidSize = Math.max(...demoOrderBook.bids.map((b) => b.size), 1)
+  const maxAskSize = Math.max(...orderBook.asks.map((a) => a.quantity || 0), 1)
+  const maxBidSize = Math.max(...orderBook.bids.map((b) => b.quantity || 0), 1)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
@@ -295,48 +456,56 @@ const OrderBookModal = ({
           <div className="border border-red-400/40 rounded-lg p-4 bg-red-900/25 shadow-inner">
             <div className="text-red-300 text-lg mb-2 tracking-[0.1em]">Asks</div>
             <div className="space-y-2">
-              {demoOrderBook.asks.map((ask, idx) => {
-                const widthPct = Math.max((ask.size / maxAskSize) * 100, 6)
-                return (
-                  <div
-                    key={idx}
-                    className="relative flex items-center text-sm bg-red-900/35 border border-red-500/30 rounded px-3 py-2 overflow-hidden"
-                  >
+              {orderBook.asks.length === 0 ? (
+                <div className="text-center text-red-400/50 text-sm py-2">No asks</div>
+              ) : (
+                orderBook.asks.slice(0, 5).map((ask, idx) => {
+                  const widthPct = Math.max((ask.quantity / maxAskSize) * 100, 6)
+                  return (
                     <div
-                      className="absolute left-0 top-0 h-full bg-red-600/30"
-                      style={{ width: `${widthPct}%` }}
-                    />
-                    <div className="relative flex-1 flex justify-between items-center">
-                      <span className="text-red-200 font-semibold">{Math.round(ask.price * 100)}¢</span>
-                      <span className="text-red-100">{ask.size.toLocaleString()}</span>
+                      key={idx}
+                      className="relative flex items-center text-sm bg-red-900/35 border border-red-500/30 rounded px-3 py-2 overflow-hidden"
+                    >
+                      <div
+                        className="absolute left-0 top-0 h-full bg-red-600/30"
+                        style={{ width: `${widthPct}%` }}
+                      />
+                      <div className="relative flex-1 flex justify-between items-center">
+                        <span className="text-red-200 font-semibold">{ask.price}¢</span>
+                        <span className="text-red-100">{ask.quantity?.toLocaleString()}</span>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
           </div>
 
           <div className="border border-emerald-400/40 rounded-lg p-4 bg-emerald-900/25 shadow-inner">
             <div className="text-emerald-300 text-lg mb-2 tracking-[0.1em]">Bids</div>
             <div className="space-y-2">
-              {demoOrderBook.bids.map((bid, idx) => {
-                const widthPct = Math.max((bid.size / maxBidSize) * 100, 6)
-                return (
-                  <div
-                    key={idx}
-                    className="relative flex items-center text-sm bg-emerald-900/35 border border-emerald-500/30 rounded px-3 py-2 overflow-hidden"
-                  >
+              {orderBook.bids.length === 0 ? (
+                <div className="text-center text-emerald-400/50 text-sm py-2">No bids</div>
+              ) : (
+                orderBook.bids.slice(0, 5).map((bid, idx) => {
+                  const widthPct = Math.max((bid.quantity / maxBidSize) * 100, 6)
+                  return (
                     <div
-                      className="absolute left-0 top-0 h-full bg-emerald-600/30"
-                      style={{ width: `${widthPct}%` }}
-                    />
-                    <div className="relative flex-1 flex justify-between items-center">
-                      <span className="text-emerald-200 font-semibold">{Math.round(bid.price * 100)}¢</span>
-                      <span className="text-emerald-100">{bid.size.toLocaleString()}</span>
+                      key={idx}
+                      className="relative flex items-center text-sm bg-emerald-900/35 border border-emerald-500/30 rounded px-3 py-2 overflow-hidden"
+                    >
+                      <div
+                        className="absolute left-0 top-0 h-full bg-emerald-600/30"
+                        style={{ width: `${widthPct}%` }}
+                      />
+                      <div className="relative flex-1 flex justify-between items-center">
+                        <span className="text-emerald-200 font-semibold">{bid.price}¢</span>
+                        <span className="text-emerald-100">{bid.quantity?.toLocaleString()}</span>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
           </div>
         </div>
@@ -349,131 +518,98 @@ function OfficePageContent() {
   const { initializeDemoAgents } = useTradingStore()
   const [orderBookOpen, setOrderBookOpen] = useState(false)
   const searchParams = useSearchParams()
-  const [forecast, setForecast] = useState<Forecast | null>(null)
+  
+  // Session state
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [questionText, setQuestionText] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [forecasterResponses, setForecasterResponses] = useState<ForecasterResponse[]>([])
-  const [selectedForecaster, setSelectedForecaster] = useState<ForecasterResponse | null>(null)
+  const [isRunning, setIsRunning] = useState(false)
+  const [roundNumber, setRoundNumber] = useState(0)
+  const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null)
+  
+  // Real-time data
+  const realtimeData = useRealtimeTrades(sessionId || "")
 
   useEffect(() => {
     initializeDemoAgents(18)
   }, [initializeDemoAgents])
 
-  // Fetch forecaster responses when forecast is available
+  // Poll simulation status
   useEffect(() => {
-    if (forecast?.forecaster_responses) {
-      setForecasterResponses(forecast.forecaster_responses)
-    } else if (forecast?.id) {
-      // If responses not in forecast object, fetch them
-      const fetchResponses = async () => {
-        try {
-          const forecastData = await api.forecasts.get(forecast.id) as Forecast
-          if (forecastData.forecaster_responses) {
-            setForecasterResponses(forecastData.forecaster_responses)
-          }
-        } catch (error) {
-          console.error("Error fetching forecaster responses:", error)
-        }
+    if (!sessionId) return
+    
+    const pollStatus = async () => {
+      try {
+        const status = await api.sessions.getStatus(sessionId)
+        setIsRunning(status.running)
+        setRoundNumber(status.round_number || 0)
+      } catch (error) {
+        console.error("Error polling status:", error)
       }
-      fetchResponses()
-    } else {
-      setForecasterResponses([])
     }
-  }, [forecast?.id, forecast?.forecaster_responses])
+    
+    pollStatus()
+    const interval = setInterval(pollStatus, 5000)
+    return () => clearInterval(interval)
+  }, [sessionId])
 
-  const processForecast = async (queryText: string) => {
+  // Build agents with real-time state
+  const agents: AgentInfo[] = ALL_AGENTS.map((agentConfig) => {
+    const traderState = realtimeData.traderStates.find(
+      (t) => t.name === agentConfig.key || t.name === agentConfig.key.toLowerCase()
+    )
+    
+    return {
+      ...agentConfig,
+      status: traderState ? "idle" as const : "offline" as const,
+      prediction: undefined, // Could extract from system_prompt if stored
+      traderState,
+    }
+  })
+
+  // Start simulation
+  const startSimulation = useCallback(async (queryText: string) => {
     setIsLoading(true)
-    setForecast(null)
-    setForecasterResponses([])
+    setQuestionText(queryText)
 
     try {
-      // Check if forecast exists in database
-      const existingForecasts = await api.forecasts.list(1, 0, queryText.trim()) as { forecasts: Forecast[], total: number }
-      let forecastId: string | null = null
+      const result = await api.sessions.run({
+        question_text: queryText.trim(),
+        question_type: "binary",
+        resolution_criteria: "Standard YES/NO resolution based on outcome occurrence.",
+        resolution_date: "2025-12-31",
+        trading_interval_seconds: 10,
+      })
 
-      if (existingForecasts.forecasts && existingForecasts.forecasts.length > 0) {
-        // Find a completed forecast with matching question
-        const completed = existingForecasts.forecasts.find(
-          (f) => f.status === "completed" && f.question_text.trim().toLowerCase() === queryText.trim().toLowerCase()
-        )
-        if (completed) {
-          forecastId = completed.id
-        }
-      }
-
-      // If no completed forecast found, create a new one
-      if (!forecastId) {
-        const newForecast = await api.forecasts.create({
-          question_text: queryText.trim(),
-          question_type: "binary",
-          run_all_forecasters: true, // Run all 5 forecaster personalities for Cassandra
-          agent_counts: {
-            phase_1_discovery: 2,
-            phase_2_validation: 2,
-            phase_3_research: 2, // Backward compatible - will split 50/50 into historical/current
-            phase_4_synthesis: 1,
-          },
-        }) as Forecast
-        forecastId = newForecast.id
-
-        // Poll for completion - check if all 5 forecasters are completed
-        const pollInterval = setInterval(async () => {
-          try {
-            const forecastData = await api.forecasts.get(forecastId!) as Forecast
-            const responses = forecastData.forecaster_responses || []
-            
-            // Check if all forecasters are completed (or at least one failed)
-            const allCompleted = responses.length >= 5 && responses.every(r => 
-              r.status === "completed" || r.status === "failed"
-            )
-            
-            if (allCompleted || forecastData.status === "failed") {
-              clearInterval(pollInterval)
-              setForecast(forecastData)
-              setForecasterResponses(responses)
-              setIsLoading(false)
-              // Don't show result overlay - show office with forecasters instead
-            }
-          } catch (error) {
-            console.error("Error polling forecast:", error)
-            clearInterval(pollInterval)
-            setIsLoading(false)
-          }
-        }, 2000) // Poll every 2 seconds
-
-        // Timeout after 5 minutes
-        setTimeout(() => {
-          clearInterval(pollInterval)
-          if (isLoading) {
-            setIsLoading(false)
-            alert("Forecast is taking longer than expected. Please check back later.")
-          }
-        }, 300000)
-      } else {
-        // Use existing forecast
-        const forecastData = await api.forecasts.get(forecastId) as Forecast
-        setForecast(forecastData)
-        if (forecastData.forecaster_responses) {
-          setForecasterResponses(forecastData.forecaster_responses)
-        }
-        setIsLoading(false)
-      }
-    } catch (error) {
-      console.error("Error processing forecast:", error)
+      setSessionId(result.session_id)
+      setIsRunning(true)
       setIsLoading(false)
-      alert("Failed to process your query. Please try again.")
+    } catch (error) {
+      console.error("Error starting simulation:", error)
+      setIsLoading(false)
+      alert("Failed to start simulation. Please try again.")
     }
-  }
+  }, [])
 
+  // Stop simulation
+  const stopSimulation = useCallback(async () => {
+    if (!sessionId) return
+    
+    try {
+      await api.sessions.stop(sessionId)
+      setIsRunning(false)
+    } catch (error) {
+      console.error("Error stopping simulation:", error)
+    }
+  }, [sessionId])
+
+  // Handle query param
   useEffect(() => {
     const query = searchParams.get("q")
-    if (query) {
-      processForecast(query)
+    if (query && !sessionId) {
+      startSimulation(query)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
-
-
-  useDemoMode(true)
+  }, [searchParams, sessionId, startSimulation])
 
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center relative overflow-hidden font-pixel">
@@ -497,11 +633,23 @@ function OfficePageContent() {
         <div className="absolute inset-0 bg-black/10" />
       </div>
 
+      {/* Simulation Controls */}
+      <SimulationControls
+        sessionId={sessionId}
+        isRunning={isRunning}
+        roundNumber={roundNumber}
+        onStop={stopSimulation}
+        questionText={questionText}
+      />
+
+      {/* Trade Feed */}
+      <TradeFeed trades={realtimeData.trades} />
+
       {/* Main Scene */}
       <div className="relative z-10 w-full h-full">
         <OfficeScene 
-          forecasterResponses={forecasterResponses}
-          onForecasterClick={(response) => setSelectedForecaster(response)}
+          agents={agents}
+          onAgentClick={(agent) => setSelectedAgent(agent)}
         />
 
         {/* Central desk / terminal in the aisle */}
@@ -523,20 +671,21 @@ function OfficePageContent() {
         </div>
       </div>
 
-      <OrderBookModal open={orderBookOpen} onClose={() => setOrderBookOpen(false)} />
+      <OrderBookModal open={orderBookOpen} onClose={() => setOrderBookOpen(false)} sessionId={sessionId} />
 
       {/* Loading overlay */}
       {isLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-[#f7f5f0] drop-shadow-[0_4px_12px_rgba(0,0,0,0.55)]">
             <div className="text-xl tracking-[0.18em] uppercase flex items-center gap-1">
-              <span>Analyzing</span>
+              <span>Starting Simulation</span>
               <span className="inline-flex w-10 justify-between text-lg">
                 <span className="animate-[blink_1s_infinite]">.</span>
                 <span className="animate-[blink_1.1s_infinite]">.</span>
                 <span className="animate-[blink_1.2s_infinite]">.</span>
               </span>
             </div>
+            <div className="text-sm text-slate-400">Running superforecasters...</div>
             <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20 relative">
               <div className="absolute inset-y-0 left-0 w-1/3 animate-[slide_1.8s_ease-in-out_infinite] bg-white/60 rounded-full" />
             </div>
@@ -544,116 +693,12 @@ function OfficePageContent() {
         </div>
       )}
 
-      {/* Forecaster Detail Modal */}
-      {selectedForecaster && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedForecaster(null)}>
-          <div className="relative w-full max-w-3xl bg-[#1a1f2e] border-4 border-[#2d3748] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.75)] p-8 text-white max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setSelectedForecaster(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl font-bold"
-            >
-              ×
-            </button>
-            
-            {(() => {
-              const classInfo = FORECASTER_CLASSES[selectedForecaster.forecaster_class as keyof typeof FORECASTER_CLASSES]
-              return (
-                <div>
-                  <h2 className={`${pressStart.className} text-2xl tracking-[0.15em] uppercase mb-4 text-[#f7f5f0]`}>
-                    {classInfo?.name || selectedForecaster.forecaster_class}
-                  </h2>
-                  
-                  {/* Description */}
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold mb-2 text-[#f7f5f0]">Description</h3>
-                    <p className="text-gray-300 leading-relaxed">{classInfo?.description || "No description available"}</p>
-                  </div>
-
-                  {/* Traits */}
-                  {classInfo?.traits && (
-                    <div className="mb-6">
-                      <h3 className="text-lg font-semibold mb-2 text-[#f7f5f0]">Traits</h3>
-                      <ul className="list-disc list-inside space-y-1 text-gray-300">
-                        {classInfo.traits.map((trait, idx) => (
-                          <li key={idx} className="text-sm">{trait}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Prediction Results */}
-                  {selectedForecaster.status === "completed" && (
-                    <div className="mb-6 p-6 bg-[#0f172a]/50 rounded-lg border border-[#2d3748]">
-                      <h3 className="text-lg font-semibold mb-4 text-[#f7f5f0]">Prediction</h3>
-                      
-                      {selectedForecaster.prediction_result && (
-                        <div className="mb-4">
-                          <div className="text-3xl font-bold text-[#f7f5f0] mb-2">
-                            {selectedForecaster.prediction_result.prediction}
-                          </div>
-                        </div>
-                      )}
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        {selectedForecaster.prediction_probability !== undefined && (
-                          <div>
-                            <div className="text-sm text-gray-400 mb-1">Probability</div>
-                            <div className={`${pressStart.className} text-3xl tracking-[0.1em] text-[#2d7dd2]`}>
-                              {Math.round(selectedForecaster.prediction_probability * 100)}%
-                            </div>
-                          </div>
-                        )}
-                        {selectedForecaster.confidence !== undefined && (
-                          <div>
-                            <div className="text-sm text-gray-400 mb-1">Confidence</div>
-                            <div className={`${pressStart.className} text-3xl tracking-[0.1em] text-[#60a5fa]`}>
-                              {Math.round(selectedForecaster.confidence * 100)}%
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {selectedForecaster.prediction_result?.reasoning && (
-                        <div className="mt-4 pt-4 border-t border-[#2d3748]">
-                          <div className="text-sm text-gray-400 mb-2">Reasoning</div>
-                          <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-                            {selectedForecaster.prediction_result.reasoning}
-                          </p>
-                        </div>
-                      )}
-
-                      {selectedForecaster.prediction_result?.key_factors && selectedForecaster.prediction_result.key_factors.length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-[#2d3748]">
-                          <div className="text-sm text-gray-400 mb-2">Key Factors</div>
-                          <ul className="list-disc list-inside space-y-1">
-                            {selectedForecaster.prediction_result.key_factors.map((factor, idx) => (
-                              <li key={idx} className="text-sm text-gray-300">{factor}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedForecaster.status === "running" && (
-                    <div className="p-6 bg-yellow-900/25 rounded-lg border border-yellow-500/30">
-                      <p className="text-yellow-200">This forecaster is still analyzing...</p>
-                    </div>
-                  )}
-
-                  {selectedForecaster.status === "failed" && (
-                    <div className="p-6 bg-red-900/25 rounded-lg border border-red-500/30">
-                      <p className="text-red-200">This forecaster encountered an error.</p>
-                      {selectedForecaster.error_message && (
-                        <p className="text-red-300 text-sm mt-2">{selectedForecaster.error_message}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-        </div>
+      {/* Agent Detail Modal */}
+      {selectedAgent && (
+        <AgentDetailModal
+          agent={selectedAgent}
+          onClose={() => setSelectedAgent(null)}
+        />
       )}
 
       {/* CRT/Scanline Effects */}
@@ -666,7 +711,7 @@ function OfficePageContent() {
 export default function Page() {
   return (
     <Suspense fallback={
-      <div className="h-screen w-full flex items-center justify-center">
+      <div className="h-screen w-full flex items-center justify-center bg-[#0f172a]">
         <div className="text-white">Loading...</div>
       </div>
     }>
@@ -674,4 +719,3 @@ export default function Page() {
     </Suspense>
   )
 }
-
