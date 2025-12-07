@@ -64,6 +64,23 @@ const ALL_AGENTS = [
   ...Object.entries(AGENT_CONFIG.user).map(([key, val]) => ({ key, ...val, type: "user" })),
 ]
 
+// Choose sprite for a given agent
+const getAgentSprite = (agent: { key: string; type: string }, index: number) => {
+  if (agent.type === "user" && agent.key === "owen") {
+    return "/sprites/owenzhanggood.png"
+  }
+  else if (agent.type == "user" && agent.key == "skylar"){
+    return "/sprites/skylargood.png"
+  }
+  else if (agent.type == "user" && agent.key == "oliver"){
+    return "/sprites/olivergood.png"
+  }
+  else if (agent.type == "user" && agent.key == "tyler"){
+    return "/sprites/tylergood.png"
+  }
+  return workerSprites[index % workerSprites.length]
+}
+
 const statusStyles = {
   idle: { label: "Active", className: "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.45)]" },
   analyzing: { label: "Processing", className: "bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.45)]" },
@@ -198,7 +215,7 @@ const OfficeScene = ({
             {agents.slice(0, 9).map((agent, i) => (
               <div key={agent.key} className="flex justify-center">
                 <Cubicle
-                  sprite={workerSprites[i % workerSprites.length]}
+                  sprite={getAgentSprite(agent, i)}
                   name={agent.name}
                   role={agent.role}
                   status={agent.status}
@@ -219,7 +236,7 @@ const OfficeScene = ({
               return (
                 <div key={agent.key} className="flex justify-center">
                   <Cubicle
-                    sprite={workerSprites[idx % workerSprites.length]}
+                    sprite={getAgentSprite(agent, idx)}
                     name={agent.name}
                     role={agent.role}
                     status={agent.status}
