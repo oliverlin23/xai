@@ -516,14 +516,21 @@ class SimulationStatusResponse(BaseModel):
     agent_count: int
     agents: List[str]
     message: str
+    phase: str  # "initializing" | "running" | "stopped"
 
 
 @app.get("/api/sessions/{session_id}/status", response_model=SimulationStatusResponse)
 async def get_simulation_status(session_id: str):
     """
     Get the status of a trading simulation.
+    
+    Phase states:
+    - "initializing": Superforecasters are running, market being set up
+    - "running": Trading simulation is active
+    - "stopped": Simulation has stopped or completed
     """
     from app.traders.simulation import get_simulation
+    from app.db.repositories import ForecasterResponseRepository
     
     simulation = get_simulation(session_id)
     
@@ -535,6 +542,25 @@ async def get_simulation_status(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
+        # Check if superforecasters are still running
+        forecaster_repo = ForecasterResponseRepository()
+        forecaster_responses = forecaster_repo.find_all(filters={"session_id": session_id})
+        
+        # Determine phase based on forecaster status
+        if forecaster_responses:
+            # Check if any forecaster is still running
+            any_running = any(r.get("status") == "running" for r in forecaster_responses)
+            if any_running:
+                return SimulationStatusResponse(
+                    session_id=session_id,
+                    running=False,
+                    round_number=0,
+                    agent_count=0,
+                    agents=[],
+                    message="Superforecasters initializing market...",
+                    phase="initializing",
+                )
+        
         return SimulationStatusResponse(
             session_id=session_id,
             running=False,
@@ -542,6 +568,7 @@ async def get_simulation_status(session_id: str):
             agent_count=0,
             agents=[],
             message="Simulation not running (may have completed or not started)",
+            phase="stopped",
         )
     
     status = simulation.get_status()
@@ -552,6 +579,7 @@ async def get_simulation_status(session_id: str):
         agent_count=status["agent_count"],
         agents=status["agents"],
         message="Simulation is running" if status["running"] else "Simulation stopped",
+        phase="running" if status["running"] else "stopped",
     )
 
 

@@ -34,7 +34,6 @@ export interface TraderState {
   name: string
   system_prompt: string | null
   position: number
-  cash: number
   pnl: number
   updated_at: string
 }

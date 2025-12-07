@@ -17,9 +17,9 @@ from datetime import datetime
 LOGS_DIR = Path(__file__).parent.parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Get log level from environment (default: WARNING for cleaner output)
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
-_log_level = getattr(logging, LOG_LEVEL, logging.WARNING)
+# Get log level from environment (default: INFO)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+_log_level = getattr(logging, LOG_LEVEL, logging.INFO)
 
 # Create formatter
 formatter = logging.Formatter(

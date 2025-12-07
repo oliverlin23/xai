@@ -100,7 +100,6 @@ class TraderStateLive(Base):
     name = Column(String(50), nullable=False)  # trader_name enum in DB
     system_prompt = Column(Text)
     position = Column(Integer, nullable=False, default=0)
-    cash = Column(DECIMAL(12, 2), nullable=False, default=1000.00)
     pnl = Column(DECIMAL(12, 2), nullable=False, default=0)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow)
 

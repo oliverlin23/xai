@@ -214,12 +214,12 @@ async function matchOrders(
     }
   }
 
-  // Update trader states (positions and cash)
+  // Update trader states (positions only)
   for (const trade of trades) {
-    // Update buyer: +position, -cash
-    await updateTraderState(supabase, sessionId, trade.buyer_name, trade.quantity, -trade.price * trade.quantity);
-    // Update seller: -position, +cash
-    await updateTraderState(supabase, sessionId, trade.seller_name, -trade.quantity, trade.price * trade.quantity);
+    // Update buyer: +position
+    await updateTraderState(supabase, sessionId, trade.buyer_name, trade.quantity);
+    // Update seller: -position
+    await updateTraderState(supabase, sessionId, trade.seller_name, -trade.quantity);
   }
 
   return {
@@ -229,13 +229,12 @@ async function matchOrders(
   };
 }
 
-// Update trader state (position and cash)
+// Update trader state (position only)
 async function updateTraderState(
   supabase: ReturnType<typeof createClient>,
   sessionId: string,
   traderName: string,
-  positionDelta: number,
-  cashDeltaCents: number
+  positionDelta: number
 ): Promise<void> {
   // First, try to get existing state
   const { data: existing } = await supabase
@@ -245,15 +244,12 @@ async function updateTraderState(
     .eq("name", traderName)
     .single();
 
-  const cashDeltaDollars = cashDeltaCents / 100;
-
   if (existing) {
     // Update existing
     const { error } = await supabase
       .from("trader_state_live")
       .update({
         position: existing.position + positionDelta,
-        cash: parseFloat(existing.cash) + cashDeltaDollars,
         updated_at: new Date().toISOString(),
       })
       .eq("id", existing.id);
@@ -282,7 +278,6 @@ async function updateTraderState(
       trader_type: traderType,
       name: traderName,
       position: positionDelta,
-      cash: 1000 + cashDeltaDollars, // Starting cash + delta
     });
 
     if (error) {

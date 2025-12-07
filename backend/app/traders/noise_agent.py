@@ -258,7 +258,7 @@ class NoiseTrader(BaseAgent):
         super().__init__(
             agent_name=agent_name,
             phase=phase,
-            system_prompt=_get_noise_trader_prompt(sphere, use_semantic_filter),
+            system_prompt=_get_noise_trader_prompt(sphere),
             output_schema=NoiseTraderOutput,
             max_retries=max_retries,
             timeout_seconds=timeout_seconds

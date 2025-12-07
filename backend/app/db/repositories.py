@@ -53,6 +53,11 @@ class BaseRepository:
         """Delete a record"""
         return self.query.delete(id)
     
+    def find_one(self, filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Find a single record matching filters"""
+        results = self.find_all(filters=filters, limit=1)
+        return results[0] if results else None
+    
     def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """Count records"""
         return self.query.count(filters)
@@ -103,28 +108,23 @@ class SessionRepository(BaseRepository):
         total_duration_seconds: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        Mark session as completed with optional prediction results.
+        Mark session as completed.
+        
+        Note: prediction_probability, confidence, and total_duration_seconds are 
+        stored in forecaster_responses table, not sessions table.
+        These params are kept for API compatibility but ignored.
         
         Args:
             session_id: Session ID
-            prediction_probability: Probability of the event (0.0-1.0)
-            confidence: Confidence in the probability (0.0-1.0)
-            total_duration_seconds: Total execution time
+            prediction_probability: (ignored - stored in forecaster_responses)
+            confidence: (ignored - stored in forecaster_responses)
+            total_duration_seconds: (ignored - stored in forecaster_responses)
         
         Returns:
             Updated session record
         """
+        # Only update completed_at - other fields stored in forecaster_responses
         data = {"completed_at": datetime.utcnow().isoformat()}
-        
-        if prediction_probability is not None:
-            data["prediction_probability"] = prediction_probability
-        
-        if confidence is not None:
-            data["confidence"] = confidence
-        
-        if total_duration_seconds is not None:
-            data["total_duration_seconds"] = total_duration_seconds
-        
         return self.update(session_id, data)
     
     def get_session_status(self, session_id: str) -> str:

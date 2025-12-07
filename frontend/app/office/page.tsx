@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense, useCallback } from "react"
+import { useEffect, useState, Suspense, useCallback, useRef } from "react"
 import { useTradingStore } from "@/lib/store"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
@@ -367,10 +367,6 @@ const AgentDetailModal = ({
                   </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-xs">Cash</div>
-                  <div className="text-slate-300">${agent.traderState.cash.toFixed(2)}</div>
-                </div>
-                <div>
                   <div className="text-slate-500 text-xs">P&L</div>
                   <div className={agent.traderState.pnl >= 0 ? "text-green-400" : "text-red-400"}>
                     ${agent.traderState.pnl.toFixed(2)}
@@ -524,6 +520,7 @@ function OfficePageContent() {
   const [questionText, setQuestionText] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
+  const [simulationPhase, setSimulationPhase] = useState<"initializing" | "running" | "stopped">("stopped")
   const [roundNumber, setRoundNumber] = useState(0)
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null)
   
@@ -543,25 +540,45 @@ function OfficePageContent() {
         const status = await api.sessions.getStatus(sessionId)
         setIsRunning(status.running)
         setRoundNumber(status.round_number || 0)
+        // Update phase from backend (initializing, running, stopped)
+        if (status.phase) {
+          setSimulationPhase(status.phase as "initializing" | "running" | "stopped")
+        }
       } catch (error) {
         console.error("Error polling status:", error)
       }
     }
     
     pollStatus()
-    const interval = setInterval(pollStatus, 5000)
+    // Poll more frequently during initialization to catch phase changes
+    const interval = setInterval(pollStatus, 3000)
     return () => clearInterval(interval)
   }, [sessionId])
 
   // Build agents with real-time state
+  // Agent status is tied to the simulation phase and trader state
   const agents: AgentInfo[] = ALL_AGENTS.map((agentConfig) => {
     const traderState = realtimeData.traderStates.find(
       (t) => t.name === agentConfig.key || t.name === agentConfig.key.toLowerCase()
     )
     
+    // Status logic:
+    // - offline: simulation stopped
+    // - analyzing: initializing phase (superforecasters running)
+    // - idle: simulation running and trader is active
+    let status: "idle" | "analyzing" | "offline"
+    if (simulationPhase === "stopped") {
+      status = "offline"
+    } else if (simulationPhase === "initializing") {
+      status = "analyzing"  // Yellow - processing
+    } else {
+      // Running phase
+      status = traderState ? "idle" : "offline"
+    }
+    
     return {
       ...agentConfig,
-      status: traderState ? "idle" as const : "offline" as const,
+      status,
       prediction: undefined, // Could extract from system_prompt if stored
       traderState,
     }
@@ -603,10 +620,14 @@ function OfficePageContent() {
     }
   }, [sessionId])
 
+  // Track if we've already started a simulation (prevents React Strict Mode double-call)
+  const hasStartedRef = useRef(false)
+
   // Handle query param
   useEffect(() => {
     const query = searchParams.get("q")
-    if (query && !sessionId) {
+    if (query && !sessionId && !hasStartedRef.current) {
+      hasStartedRef.current = true
       startSimulation(query)
     }
   }, [searchParams, sessionId, startSimulation])

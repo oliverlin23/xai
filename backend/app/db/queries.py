@@ -85,11 +85,9 @@ class QueryBuilder:
         Returns:
             Created record
         """
-        # Add timestamps if not present
+        # Add id if not present (let DB handle created_at with defaults)
         if "id" not in data:
             data["id"] = str(uuid.uuid4())
-        if "created_at" not in data:
-            data["created_at"] = datetime.utcnow().isoformat()
         
         result = self.table.insert(data).execute()
         return result.data[0] if result.data else None

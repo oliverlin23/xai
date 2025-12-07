@@ -8,7 +8,6 @@ export interface TraderProfile {
   description: string
   role: string
   position: number
-  cash: number
   pnl: number
   system_prompt?: string
 }

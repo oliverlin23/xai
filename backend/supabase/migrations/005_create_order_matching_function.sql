@@ -96,9 +96,9 @@ BEGIN
             END
         WHERE id = v_ask.id;
         
-        -- Update trader states
-        -- Buyer: +position, -cash (price is in cents, convert to dollars)
-        INSERT INTO trader_state_live (session_id, trader_type, name, position, cash)
+        -- Update trader states (position only)
+        -- Buyer: +position
+        INSERT INTO trader_state_live (session_id, trader_type, name, position)
         VALUES (
             p_session_id,
             (SELECT 
@@ -109,16 +109,14 @@ BEGIN
                 END
             ),
             v_bid.trader_name,
-            v_fill_qty,
-            1000.00 - (v_exec_price * v_fill_qty / 100.0)
+            v_fill_qty
         )
         ON CONFLICT (session_id, name) DO UPDATE SET
             position = trader_state_live.position + v_fill_qty,
-            cash = trader_state_live.cash - (v_exec_price * v_fill_qty / 100.0),
             updated_at = NOW();
         
-        -- Seller: -position, +cash
-        INSERT INTO trader_state_live (session_id, trader_type, name, position, cash)
+        -- Seller: -position
+        INSERT INTO trader_state_live (session_id, trader_type, name, position)
         VALUES (
             p_session_id,
             (SELECT 
@@ -129,12 +127,10 @@ BEGIN
                 END
             ),
             v_ask.trader_name,
-            -v_fill_qty,
-            1000.00 + (v_exec_price * v_fill_qty / 100.0)
+            -v_fill_qty
         )
         ON CONFLICT (session_id, name) DO UPDATE SET
             position = trader_state_live.position - v_fill_qty,
-            cash = trader_state_live.cash + (v_exec_price * v_fill_qty / 100.0),
             updated_at = NOW();
         
         -- Update counters

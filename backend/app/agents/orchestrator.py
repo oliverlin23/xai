@@ -177,10 +177,9 @@ class AgentOrchestrator:
                 logger.error(f"[ORCHESTRATOR] Phase 4 traceback:\n{traceback.format_exc()}")
                 raise
 
-            # Calculate total tokens from all agent logs and update session once at the end
-            logger.info("[ORCHESTRATOR] Calculating total tokens")
-            self.calculate_and_update_total_tokens()
-
+            # Note: total_cost_tokens column doesn't exist in DB, skip token calculation
+            # Token usage is tracked in agent_logs table instead
+            
             # Calculate total workflow duration
             workflow_duration = time.time() - workflow_start_time
             
@@ -754,6 +753,9 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
         
         Alternative: Could calculate on-demand from agent_logs, but storing
         in sessions makes queries faster.
+        
+        Note: total_cost_tokens column doesn't exist in the sessions table.
+        Token usage is tracked per-agent in agent_logs table.
         """
         # Get all agent logs for this session
         all_logs = self.log_repo.get_session_logs(self.session_id)
@@ -765,9 +767,5 @@ Sources: {', '.join(set(all_sources)) if all_sources else 'None'}"""
             if log.get("status") == "completed"
         )
         
-        # Update session once with final total
-        # Use base repository update method (inherited from BaseRepository)
-        self.session_repo.update(
-            self.session_id,
-            {"total_cost_tokens": total_tokens}
-        )
+        # Log the total but don't update DB (column doesn't exist)
+        logger.info(f"[ORCHESTRATOR] Total tokens used: {total_tokens}")

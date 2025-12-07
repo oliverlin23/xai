@@ -27,7 +27,7 @@ CREATE TYPE order_status AS ENUM ('open', 'filled', 'partially_filled', 'cancell
 
 
 -- =============================================================================
--- TABLE 1: LIVE TRADER STATE (prompts + positions + cash)
+-- TABLE 1: LIVE TRADER STATE (prompts + positions)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS trader_state_live (
@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS trader_state_live (
     system_prompt TEXT,
     -- Position & P/L
     position INTEGER NOT NULL DEFAULT 0,  -- Positive = long, negative = short
-    cash DECIMAL(12, 2) NOT NULL DEFAULT 1000.00,  -- Starting cash
     pnl DECIMAL(12, 2) NOT NULL DEFAULT 0,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(session_id, name)

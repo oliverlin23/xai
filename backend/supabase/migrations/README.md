@@ -46,7 +46,6 @@ Current state of each trader in a session.
 | name          | trader_name | -       | Trader identifier             |
 | system_prompt | TEXT        | NULL    | Current LLM prompt (optional) |
 | position      | INTEGER     | 0       | Contracts held (+long/-short) |
-| cash          | DECIMAL     | 1000.00 | Available cash                |
 | pnl           | DECIMAL     | 0       | Profit/loss                   |
 
 #### trader_prompts_history
