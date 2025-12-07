@@ -15,6 +15,74 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError, validator
 
 LOGGER = logging.getLogger("grok_tool")
 
+# Hardcoded communities - curated spheres of influence on X
+COMMUNITIES: dict[str, list[str]] = {
+    "tech_vc": [
+        "elonmusk",
+        "pmarca",
+        "balajis",
+        "paulg",
+        "naval",
+        "davidsacks",
+        "chamath",
+        "garrytan",
+        "sama",
+    ],
+    "maga_populist": [
+        "TuckerCarlson",
+        "JDVance1",
+        "DonaldJTrumpJr",
+        "charliekirk11",
+        "RealCandaceO",
+        "RudyGiuliani",
+        "SebGorka",
+    ],
+    "progressive_left": [
+        "AOC",
+        "BernieSanders",
+        "RBReich",
+        "IlhanMN",
+        "RashidaTlaib",
+        "eaborz",
+        "ProPublica",
+    ],
+    "crypto_web3": [
+        "VitalikButerin",
+        "cz_binance",
+        "brian_armstrong",
+        "APompliano",
+        "SatoshiLite",
+        "aantonop",
+        "ethereumJoseph",
+    ],
+    "rationalist_ai": [
+        "ESYudkowsky",
+        "scottaaronson",
+        "robinhanson",
+        "tylercowen",
+        "slaborz",
+        "AISafetyMemes",
+        "AnthropicAI",
+    ],
+    "manosphere_selfhelp": [
+        "joerogan",
+        "jordanbpeterson",
+        "lexfridman",
+        "hubermanlab",
+        "TheRealTaborz",
+        "jaborz",
+    ],
+    "media_journalism": [
+        "mtaibbi",
+        "ggreenwald",
+        "ezraklein",
+        "chrislhayes",
+        "andersoncooper",
+        "KattyKay_",
+        "maggieNYT",
+    ],
+}
+
 
 def _utc_now() -> datetime:
     return datetime.now(tz=UTC)
@@ -34,6 +102,7 @@ class GrokXToolRequest(BaseModel):
     lang: str | None = Field(default="en", max_length=8)
     include_retweets: bool = False
     include_replies: bool = False
+    community: str | None = Field(default=None, description="Community sphere to search (e.g., tech_vc, maga_populist)")
 
     @validator("topic")
     def _sanitize_topic(cls, value: str) -> str:
@@ -44,6 +113,13 @@ class GrokXToolRequest(BaseModel):
         value = value.strip().lstrip("@")
         if not value:
             raise ValueError("username cannot be empty")
+        return value
+
+    @validator("community")
+    def _validate_community(cls, value: str | None) -> str | None:
+        if value is not None and value not in COMMUNITIES:
+            valid = ", ".join(COMMUNITIES.keys())
+            raise ValueError(f"Invalid community '{value}'. Valid options: {valid}")
         return value
 
 
@@ -82,7 +158,7 @@ class GrokXToolConfig(BaseModel):
     http_timeout_seconds: float = 15.0
     request_retries: int = 3
     request_backoff_seconds: float = 2.0
-    follower_sample_size: int = 10
+    follower_sample_size: int = 3
     following_sample_per_follower: int = 5
     max_related_users: int = 0
     graph_concurrency: int = 8
@@ -282,35 +358,69 @@ class GrokXTool:
         related_users: list[RelatedUser],
         request: GrokXToolRequest,
     ) -> list[TweetResult]:
-        targets: list[_User | RelatedUser] = [seed_user] + related_users
-        per_target = min(
-            100,
-            max(
-                10,
-                math.ceil(request.max_tweets / max(len(targets), 1)) * 2,
-            ),
-        )
-        semaphore = asyncio.Semaphore(self._config.search_concurrency)
+        all_tweets: list[TweetResult] = []
 
-        async def _search(target: _User | RelatedUser) -> list[TweetResult]:
-            async with semaphore:
-                query = self._build_query(
+        # Search seed user's tweets
+        seed_query = self._build_query(
+            topic=request.topic,
+            usernames=[seed_user.username],
+            lang=request.lang,
+            include_retweets=request.include_retweets,
+            include_replies=request.include_replies,
+        )
+        seed_payload = await client.search_tweets(
+            query=seed_query,
+            start_time=request.start_time,
+            max_results=min(100, request.max_tweets),
+        )
+        all_tweets.extend(self._map_tweets(seed_payload))
+
+        # If a community is specified, batch search all community members in one query
+        if request.community:
+            community_users = COMMUNITIES.get(request.community, [])
+            # Filter out the seed user if they're in the community
+            community_users = [u for u in community_users if u.lower() != seed_user.username.lower()]
+
+            if community_users:
+                community_query = self._build_query(
                     topic=request.topic,
-                    username=target.username,
+                    usernames=community_users,
                     lang=request.lang,
                     include_retweets=request.include_retweets,
                     include_replies=request.include_replies,
                 )
-                payload = await client.search_tweets(
-                    query=query,
+                community_payload = await client.search_tweets(
+                    query=community_query,
                     start_time=request.start_time,
-                    max_results=per_target,
+                    max_results=min(100, request.max_tweets),
                 )
-            return self._map_tweets(payload)
+                all_tweets.extend(self._map_tweets(community_payload))
 
-        tweet_batches = await asyncio.gather(*(_search(user) for user in targets))
-        flattened = [tweet for batch in tweet_batches for tweet in batch]
-        deduped = self._dedupe_tweets(flattened)
+        # Legacy: search related users individually (if any from graph expansion)
+        if related_users:
+            semaphore = asyncio.Semaphore(self._config.search_concurrency)
+
+            async def _search(target: RelatedUser) -> list[TweetResult]:
+                async with semaphore:
+                    query = self._build_query(
+                        topic=request.topic,
+                        usernames=[target.username],
+                        lang=request.lang,
+                        include_retweets=request.include_retweets,
+                        include_replies=request.include_replies,
+                    )
+                    payload = await client.search_tweets(
+                        query=query,
+                        start_time=request.start_time,
+                        max_results=50,
+                    )
+                return self._map_tweets(payload)
+
+            tweet_batches = await asyncio.gather(*(_search(user) for user in related_users))
+            for batch in tweet_batches:
+                all_tweets.extend(batch)
+
+        deduped = self._dedupe_tweets(all_tweets)
         deduped.sort(key=lambda t: t.created_at, reverse=True)
         return deduped[: request.max_tweets]
 
@@ -353,12 +463,18 @@ class GrokXTool:
     @staticmethod
     def _build_query(
         topic: str,
-        username: str,
+        usernames: list[str],
         lang: str | None,
         include_retweets: bool,
         include_replies: bool,
     ) -> str:
-        clauses = [f"({topic})", f"from:{username}"]
+        # Build from clause - single user or OR'd list
+        if len(usernames) == 1:
+            from_clause = f"from:{usernames[0]}"
+        else:
+            from_clause = "(" + " OR ".join(f"from:{u}" for u in usernames) + ")"
+
+        clauses = [f"({topic})", from_clause]
         if not include_retweets:
             clauses.append("-is:retweet")
         if not include_replies:

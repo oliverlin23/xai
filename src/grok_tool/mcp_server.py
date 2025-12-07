@@ -10,7 +10,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import ListToolsResult, TextContent, Tool
 from pydantic import ValidationError
 
-from .tool import GrokXToolConfig, run_tool
+from .tool import COMMUNITIES, GrokXToolConfig, run_tool
 
 
 def _json_serializer(obj: Any) -> Any:
@@ -65,6 +65,33 @@ REQUEST_SCHEMA: dict[str, Any] = {
             "default": False,
             "description": "Set true to allow replies in the result set",
         },
+        "max_related_users": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "default": 0,
+            "description": "Number of related users (from seed user's follower graph) to also search. Set >0 to expand search to the user's 'circle'.",
+        },
+        "follower_sample_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 3,
+            "description": "Number of seed user's followers to sample for graph expansion.",
+        },
+        "following_sample_per_follower": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5,
+            "description": "Number of accounts to check per sampled follower.",
+        },
+        "community": {
+            "type": ["string", "null"],
+            "enum": [None] + list(COMMUNITIES.keys()),
+            "default": None,
+            "description": f"Community sphere to also search. Options: {', '.join(COMMUNITIES.keys())}. Uses batched query (1 API call) for efficiency.",
+        },
     },
     "required": ["topic", "username", "start_time"],
 }
@@ -99,9 +126,15 @@ async def _call_tool(name: str, arguments: dict[str, Any] | None):
         "lang": args.get("lang", "en"),
         "include_retweets": args.get("include_retweets", False),
         "include_replies": args.get("include_replies", False),
+        "community": args.get("community"),
     }
+    config = GrokXToolConfig(
+        max_related_users=args.get("max_related_users", 0),
+        follower_sample_size=args.get("follower_sample_size", 3),
+        following_sample_per_follower=args.get("following_sample_per_follower", 5),
+    )
     try:
-        result = await run_tool(payload, config=GrokXToolConfig())
+        result = await run_tool(payload, config=config)
     except ValidationError as exc:
         return [TextContent(type="text", text=f"Invalid payload: {exc}")]
     except Exception as exc:
