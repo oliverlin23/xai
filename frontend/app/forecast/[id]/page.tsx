@@ -46,30 +46,30 @@ export default function ForecastMonitorPage() {
 
   // Deduplicate agent logs by ID (realtime updates may duplicate initial fetch)
   const agentLogsMap = new Map<string, typeof forecast.agent_logs[0]>()
-  forecast.agent_logs.forEach(log => agentLogsMap.set(log.id, log))
-  realtimeData.agentLogs.forEach(log => agentLogsMap.set(log.id, log))
+  forecast.agent_logs.forEach((log: any) => agentLogsMap.set(log.id, log))
+  realtimeData.agentLogs.forEach((log: any) => agentLogsMap.set(log.id, log))
   const agentLogs = Array.from(agentLogsMap.values())
   
   // Deduplicate factors by ID
   const factorsMap = new Map<string, typeof forecast.factors[0]>()
-  forecast.factors.forEach(factor => factorsMap.set(factor.id, factor))
-  realtimeData.factors.forEach(factor => factorsMap.set(factor.id, factor))
+  forecast.factors.forEach((factor: any) => factorsMap.set(factor.id, factor))
+  realtimeData.factors.forEach((factor: any) => factorsMap.set(factor.id, factor))
   const factors = Array.from(factorsMap.values())
   const currentPhase = realtimeData.currentPhase || forecast.current_phase || "factor_discovery"
   const status = realtimeData.sessionStatus || forecast.status
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+    <div className="max-w-7xl mx-auto px-4 pt-24 pb-10">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-3">
           Analyzing Your Question
         </h1>
-        <p className="text-lg text-gray-600">
+        <p className="text-lg text-gray-700 leading-relaxed">
           {forecast.question_text}
         </p>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-1">
           <AgentTimeline currentPhase={currentPhase} status={status} agentLogs={agentLogs} />
         </div>

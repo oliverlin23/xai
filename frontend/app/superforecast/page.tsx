@@ -52,10 +52,10 @@ export default function SuperforecastPage() {
       <div className="min-h-screen bg-slate-600/35 overflow-y-auto">
         <div className="max-w-4xl mx-auto py-12 px-4 pt-24 text-slate-900">
           <div className="text-center mb-10 drop-shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
-            <h1 className="text-4xl font-bold mb-3 text-[#0f172a]">
+            <h1 className="text-4xl font-bold mb-3 text-[#0b1220]">
               Grok-Powered Superforecasting
             </h1>
-            <p className="text-lg text-slate-800">
+            <p className="text-lg text-slate-900">
               23 collaborative Grok agents analyze your question to produce calibrated predictions
             </p>
           </div>
