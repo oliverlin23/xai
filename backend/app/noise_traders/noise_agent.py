@@ -1,12 +1,16 @@
 """
-Noise Agent - Custom agent with X AI Lookup MCP integration
+Noise Agent - Custom agent with X API Lookup integration
 Specialized agent that uses external information lookup capabilities
+
+TODO: Integrate with X API Lookup MCP server when implemented
 """
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from app.agents.base import BaseAgent
-from app.services.xai_lookup import XAILookupMCP
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NoiseAgentOutput(BaseModel):
@@ -49,10 +53,12 @@ Be thorough, critical, and evidence-based in your analysis."""
 
 class NoiseAgent(BaseAgent):
     """
-    Noise Agent with X AI Lookup MCP integration
+    Noise Agent with X API Lookup integration
     
     This agent extends BaseAgent with the ability to use external
-    information lookup tools via the Model Context Protocol (MCP).
+    information lookup tools via the X API.
+    
+    TODO: Connect to X API Lookup MCP server for full functionality
     """
 
     def __init__(
@@ -70,7 +76,8 @@ class NoiseAgent(BaseAgent):
             max_retries=max_retries,
             timeout_seconds=timeout_seconds
         )
-        self.xai_lookup = XAILookupMCP()
+        # TODO: Initialize X API Lookup MCP client when implemented
+        self._tools_enabled = False
 
     async def build_user_message(self, input_data: Dict[str, Any]) -> str:
         """
@@ -97,130 +104,23 @@ class NoiseAgent(BaseAgent):
         progress_callback: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
-        Execute the noise agent with tool calling support
+        Execute the noise agent
         
-        Overrides base execute to handle function calling with X AI Lookup
+        When X API tools are enabled, this will use function calling.
+        Currently falls back to base agent execution with structured output.
+        
+        TODO: Re-enable tool calling when X API Lookup MCP is implemented
         """
-        self.status = "running"
-
-        if progress_callback:
-            await progress_callback(self.agent_name, "started")
-
-        # Get tool definition
-        tool_def = self.xai_lookup.get_tool_definition()
-
-        for attempt in range(self.max_retries):
-            try:
-                # Build user message
-                user_message = await self.build_user_message(input_data)
-
-                # Call Grok API with tool support
-                import asyncio
-                response = await asyncio.wait_for(
-                    self.grok_service.chat_completion(
-                        system_prompt=self.system_prompt,
-                        user_message=user_message,
-                        output_schema=None,  # Don't use structured output when using tools
-                        tools=[tool_def],
-                        tool_choice="auto"
-                    ),
-                    timeout=self.timeout_seconds
-                )
-
-                # Track tokens
-                self.tokens_used = response["total_tokens"]
-
-                # Build message history
-                messages = [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_message}
-                ]
-
-                # Process tool calls if present
-                if "tool_calls" in response and response["tool_calls"]:
-                    # Add assistant message with tool calls
-                    assistant_msg = {"role": "assistant", "content": response.get("content")}
-                    assistant_msg["tool_calls"] = response["tool_calls"]
-                    messages.append(assistant_msg)
-
-                    # Execute tool calls
-                    tool_results = []
-                    for tool_call in response["tool_calls"]:
-                        func_name = tool_call["function"]["name"]
-                        func_args = json.loads(tool_call["function"]["arguments"])
-
-                        if func_name == "xai_lookup":
-                            result = await self.xai_lookup.execute(**func_args)
-                            tool_results.append({
-                                "tool_call_id": tool_call["id"],
-                                "role": "tool",
-                                "name": func_name,
-                                "content": json.dumps(result)
-                            })
-
-                    # Add tool results to messages
-                    messages.extend(tool_results)
-
-                    # Get final response with tool results (no tools in this call)
-                    final_response = await asyncio.wait_for(
-                        self.grok_service.chat_completion_with_messages(
-                            messages=messages,
-                            output_schema=self.output_schema,
-                            tools=None
-                        ),
-                        timeout=self.timeout_seconds
-                    )
-
-                    # Parse final response
-                    content = final_response.get("content", "{}")
-                    try:
-                        raw_output = json.loads(content)
-                    except json.JSONDecodeError:
-                        # If not JSON, create output from content
-                        raw_output = {
-                            "analysis": content,
-                            "confidence": 0.7,
-                            "sources": []
-                        }
-                    validated_output = self.output_schema(**raw_output)
-                else:
-                    # No tool calls, but we used tools so response might not be structured
-                    # Try to parse JSON from content
-                    content = response.get("content", "{}")
-                    try:
-                        raw_output = json.loads(content)
-                    except json.JSONDecodeError:
-                        # If not JSON, create output from content
-                        raw_output = {
-                            "analysis": content,
-                            "confidence": 0.7,
-                            "sources": []
-                        }
-                    validated_output = self.output_schema(**raw_output)
-
-                self.output_data = validated_output.model_dump()
-                self.status = "completed"
-
-                if progress_callback:
-                    await progress_callback(self.agent_name, "completed", self.output_data)
-
-                return self.output_data
-
-            except asyncio.TimeoutError:
-                self.error_message = f"Timeout after {self.timeout_seconds}s"
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-
-            except Exception as e:
-                self.error_message = str(e)
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-
-        self.status = "failed"
-        if progress_callback:
-            await progress_callback(self.agent_name, "failed", {"error": self.error_message})
-
-        raise Exception(f"Agent {self.agent_name} failed after {self.max_retries} attempts: {self.error_message}")
+        if not self._tools_enabled:
+            # Fall back to base agent execution without tools
+            logger.info(f"NoiseAgent running without X API tools (not configured)")
+            return await super().execute(input_data, progress_callback)
+        
+        # TODO: Implement tool-enabled execution when MCP server is ready
+        # This will involve:
+        # 1. Getting tool definitions from MCP server
+        # 2. Calling Grok with tools
+        # 3. Executing tool calls via MCP
+        # 4. Returning final response
+        return await super().execute(input_data, progress_callback)
 

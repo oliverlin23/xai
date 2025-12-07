@@ -7,6 +7,9 @@ from typing import Dict, Any, Optional, Callable
 from pydantic import BaseModel
 from app.services.grok import GrokService
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):

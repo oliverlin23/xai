@@ -4,7 +4,7 @@ CRITICAL: Handles async streaming, token tracking, structured outputs, and rate 
 """
 from openai import AsyncOpenAI
 from openai import RateLimitError, APIError, APIConnectionError, APITimeoutError
-from typing import AsyncIterator, Dict, Any, Optional
+from typing import AsyncIterator, Dict, Any, Optional, List
 from pydantic import BaseModel
 from app.core.config import get_settings
 import asyncio
