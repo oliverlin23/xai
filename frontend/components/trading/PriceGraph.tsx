@@ -51,6 +51,7 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
   const [traderPositions, setTraderPositions] = useState<TraderPosition[]>([])
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
   const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
+  const [totalTradesCount, setTotalTradesCount] = useState<number>(0)
 
   // Fetch initial trades and calculate price history
   useEffect(() => {
@@ -150,6 +151,16 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
         if (recentTradesData) {
           setRecentTrades(recentTradesData as RecentTrade[])
         }
+
+        // Get total count of trades
+        const { count: tradesCount } = await supabase
+          .from("trades")
+          .select("*", { count: "exact", head: true })
+          .eq("session_id", sessionId)
+
+        if (tradesCount !== null) {
+          setTotalTradesCount(tradesCount)
+        }
       } catch (error) {
         console.error("Error fetching initial data:", error)
       }
@@ -172,7 +183,7 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           table: "trades",
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload) => {
+        async (payload) => {
           const newTrade = payload.new as any
           const newPrice = newTrade.price
           const tradeTime = new Date(newTrade.created_at)
@@ -192,6 +203,16 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           setCurrentPrice(newPrice)
           if (priceHistory.length > 0) {
             setPriceChange(newPrice - priceHistory[priceHistory.length - 1].price)
+          }
+
+          // Update total trades count
+          const { count: tradesCount } = await supabase
+            .from("trades")
+            .select("*", { count: "exact", head: true })
+            .eq("session_id", sessionId)
+
+          if (tradesCount !== null) {
+            setTotalTradesCount(tradesCount)
           }
         }
       )
@@ -316,74 +337,18 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
 
   const priceColor = priceChange >= 0 ? "text-emerald-400" : "text-red-400"
 
-  // Generate mock data when no session
-  const mockData: PriceDataPoint[] = useMemo(() => {
-    if (sessionId) return []
-
-    const now = Date.now()
-    const basePrice = 45
-    const data: PriceDataPoint[] = []
-
-    for (let i = 50; i >= 0; i--) {
-      const timestamp = now - i * 6000
-      const time = new Date(timestamp)
-      const priceChange = (Math.random() - 0.5) * 2
-      const price = Math.max(20, Math.min(80, basePrice + priceChange * i * 0.1))
-
-      data.push({
-        time: time.toLocaleTimeString(),
-        price: Math.round(price),
-        timestamp,
-      })
-    }
-
-    return data
-  }, [sessionId])
-
-  // Use mock data when no session
-  useEffect(() => {
-    if (!sessionId && mockData.length > 0) {
-      setPriceHistory(mockData)
-      setCurrentPrice(mockData[mockData.length - 1].price)
-      setPriceChange(mockData[mockData.length - 1].price - mockData[0].price)
-      setBestBid(mockData[mockData.length - 1].price - 2)
-      setBestAsk(mockData[mockData.length - 1].price + 2)
-
-      const interval = setInterval(() => {
-        setPriceHistory((prev) => {
-          if (prev.length === 0) return prev
-          const lastPrice = prev[prev.length - 1].price
-          const priceChange = (Math.random() - 0.5) * 2
-          const newPrice = Math.max(20, Math.min(80, lastPrice + priceChange))
-          const newTime = new Date()
-
-          const updated = [
-            ...prev,
-            {
-              time: newTime.toLocaleTimeString(),
-              price: Math.round(newPrice),
-              timestamp: newTime.getTime(),
-            },
-          ]
-
-          setCurrentPrice(Math.round(newPrice))
-          setPriceChange(Math.round(newPrice) - prev[0].price)
-          setBestBid(Math.round(newPrice) - 2)
-          setBestAsk(Math.round(newPrice) + 2)
-
-          return updated.slice(-100)
-        })
-      }, 3000)
-
-      return () => clearInterval(interval)
-    }
-  }, [sessionId, mockData])
-
   return (
     <div className="w-full h-full flex flex-col text-[#f7f5f0]">
       {/* Header with current price */}
       <div className="mb-3">
-        <div className="text-sm text-gray-400 mb-2">Market Price</div>
+        <div className="flex justify-between items-start mb-2">
+          <div className="text-sm text-gray-400">Market Price</div>
+          {sessionId && (
+            <div className="text-sm text-gray-400">
+              Total Trades: <span className="font-semibold text-gray-300">{totalTradesCount}</span>
+            </div>
+          )}
+        </div>
         <div className="flex items-baseline gap-3">
           {displayPrice !== null ? (
             <>
@@ -408,9 +373,9 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
 
       {/* Price Chart */}
       <div className="h-48 min-h-[180px]">
-        {priceHistory.length > 0 || (!sessionId && mockData.length > 0) ? (
+        {priceHistory.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={sessionId ? priceHistory : priceHistory.length > 0 ? priceHistory : mockData}>
+            <LineChart data={priceHistory}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis dataKey="time" stroke="#9ca3af" tick={{ fill: "#9ca3af", fontSize: 12 }} />
               <YAxis
@@ -450,8 +415,8 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
           <div className="w-full h-full flex items-center justify-center text-gray-500">
             {!sessionId ? (
               <div className="text-center">
-                <div className="text-lg mb-2">Demo Mode</div>
-                <div className="text-sm">Showing mock market data</div>
+                <div className="text-lg mb-2">No Session</div>
+                <div className="text-sm">Select a session to view market data</div>
               </div>
             ) : bestBid !== null || bestAsk !== null ? (
               <div className="text-center">
@@ -467,71 +432,14 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
         )}
       </div>
 
-      {/* Bottom Panels: Contracts (left) and Orders/Trades (right) */}
-      <div className="grid grid-cols-2 gap-4 mt-3 h-86 mb-0">
-        <div className="border border-[#2d3748] rounded-lg px-4 pt-4 pb-2 bg-[#0f172a]/50 overflow-hidden flex flex-col">
-          <div className="text-sm font-semibold mb-3 text-gray-300">Contracts (Positions)</div>
-          <div className="flex-1 overflow-y-auto space-y-2">
-            {sessionId ? (
-              traderPositions.length > 0 ? (
-                traderPositions.map((trader, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center text-xs bg-[#1a1f2e]/50 rounded px-2 py-1.5 border border-[#2d3748]"
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-gray-200">{trader.name}</span>
-                      <span className="text-gray-400 text-[10px]">{trader.trader_type}</span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className={trader.position >= 0 ? "text-emerald-400" : "text-red-400"}>
-                        {trader.position > 0 ? "+" : ""}
-                        {trader.position}
-                      </span>
-                      <span className="text-gray-500 text-[10px]">
-                        ${trader.cash.toFixed(2)} | {trader.pnl >= 0 ? "+" : ""}
-                        {trader.pnl.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-gray-500 text-sm py-8">No positions yet</div>
-              )
-            ) : (
-              <div className="space-y-2">
-                {["conservative", "momentum", "balanced", "realtime", "historical"].map((name, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center text-xs bg-[#1a1f2e]/50 rounded px-2 py-1.5 border border-[#2d3748]"
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-gray-200">{name}</span>
-                      <span className="text-gray-400 text-[10px]">fundamental</span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className={idx % 2 === 0 ? "text-emerald-400" : "text-red-400"}>
-                        {idx % 2 === 0 ? "+" : ""}
-                        {Math.floor(Math.random() * 200) - 100}
-                      </span>
-                      <span className="text-gray-500 text-[10px]">
-                        ${(1000 + (Math.random() * 200 - 100)).toFixed(2)} | {idx % 2 === 0 ? "+" : ""}
-                        {(Math.random() * 50).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="border border-[#2d3748] rounded-lg px-4 pt-4 pb-2 bg-[#0f172a]/50 overflow-hidden flex flex-col">
-          <div className="text-sm font-semibold mb-3 text-gray-300">Recent Orders & Trades</div>
-          <div className="flex-1 overflow-y-auto space-y-2">
+      {/* Bottom Panel: Recent Orders & Trades */}
+      <div className="mt-3 flex-1 min-h-0 mb-0">
+        <div className="border border-[#2d3748] rounded-lg px-4 pt-4 pb-2 bg-[#0f172a]/50 flex flex-col h-full">
+          <div className="text-sm font-semibold mb-3 text-gray-300 flex-shrink-0">Recent Orders & Trades</div>
+          <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
             {sessionId ? (
               <>
-                {recentTrades.slice(0, 5).map((trade, idx) => (
+                {recentTrades.slice(0, 10).map((trade, idx) => (
                   <div
                     key={trade.id || idx}
                     className="text-xs bg-emerald-900/20 rounded px-2 py-1.5 border border-emerald-500/30"
@@ -548,7 +456,7 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                     </div>
                   </div>
                 ))}
-                {recentOrders.slice(0, 5).map((order, idx) => (
+                {recentOrders.slice(0, 10).map((order, idx) => (
                   <div
                     key={order.id || idx}
                     className={`text-xs rounded px-2 py-1.5 border ${
@@ -582,33 +490,7 @@ export function PriceGraph({ sessionId }: PriceGraphProps) {
                 )}
               </>
             ) : (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, idx) => (
-                  <div
-                    key={idx}
-                    className={`text-xs rounded px-2 py-1.5 border ${
-                      idx % 2 === 0
-                        ? "bg-emerald-900/20 border-emerald-500/30"
-                        : "bg-red-900/20 border-red-500/30"
-                    }`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span
-                        className={`font-semibold ${idx % 2 === 0 ? "text-emerald-300" : "text-red-300"}`}
-                      >
-                        {idx % 2 === 0 ? "conservative BUY" : "momentum SELL"}
-                      </span>
-                      <span className={idx % 2 === 0 ? "text-emerald-200" : "text-red-200"}>
-                        {40 + Math.floor(Math.random() * 20)}¢
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
-                      <span>{idx % 2 === 0 ? "100/100 filled" : "50/100 open"}</span>
-                      <span>{new Date(Date.now() - idx * 10000).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <div className="text-center text-gray-500 text-sm py-8">No session selected</div>
             )}
           </div>
         </div>

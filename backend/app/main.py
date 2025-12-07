@@ -339,6 +339,7 @@ async def run_trading_simulation_background(
     3. Places initial market making orders
     4. Starts continuous trading simulation with 18 agents
     """
+    import re
     from app.db.repositories import ForecasterResponseRepository, TraderRepository
     from app.market import SupabaseMarketMaker
     from app.traders.simulation import TradingSimulation, register_simulation, unregister_simulation
@@ -346,71 +347,127 @@ async def run_trading_simulation_background(
     logger.info(f"[BACKGROUND] Starting trading simulation for session {session_id}")
     
     try:
-        # Step 1: Run all 5 superforecasters to seed fundamental trader knowledge
-        logger.info("[BACKGROUND] Running superforecasters to seed fundamental traders...")
-        await run_all_forecasters(session_id, question_text, agent_counts)
-        logger.info("[BACKGROUND] Superforecasters completed")
-        
-        # Step 2: Store forecaster responses as system_prompt in trader_state_live
-        response_repo = ForecasterResponseRepository()
         trader_repo = TraderRepository()
         market_maker = SupabaseMarketMaker()
         
-        forecaster_responses = response_repo.get_session_responses(session_id)
-        logger.info(f"[BACKGROUND] Storing {len(forecaster_responses)} forecaster responses in trader_state_live")
+        # Check if fundamental traders already exist (copied from previous session)
+        existing_traders = trader_repo.get_session_traders(session_id)
+        fundamental_traders_exist = any(
+            t.get("trader_type") == "fundamental" and t.get("system_prompt")
+            for t in existing_traders
+        )
         
-        for response in forecaster_responses:
-            forecaster_class = response.get("forecaster_class")
-            prediction_result = response.get("prediction_result", {})
+        if fundamental_traders_exist:
+            logger.info("[BACKGROUND] Found existing fundamental traders with system_prompts - skipping superforecaster run")
+            logger.info("[BACKGROUND] Using existing trader_state_live data from previous session")
+        else:
+            # Step 1: Run all 5 superforecasters to seed fundamental trader knowledge
+            logger.info("[BACKGROUND] Running superforecasters to seed fundamental traders...")
+            await run_all_forecasters(session_id, question_text, agent_counts)
+            logger.info("[BACKGROUND] Superforecasters completed")
+        
+        # Step 2: Store forecaster responses as system_prompt in trader_state_live (if we ran forecasters)
+        # OR use existing traders and place market making orders
+        response_repo = ForecasterResponseRepository()
+        forecaster_responses = response_repo.get_session_responses(session_id)
+        
+        if fundamental_traders_exist:
+            # Use existing traders - extract probability from system_prompt for market making
+            logger.info("[BACKGROUND] Placing market making orders based on existing trader system_prompts")
+            orders_placed = 0
+            for trader in existing_traders:
+                if trader.get("trader_type") == "fundamental" and trader.get("system_prompt"):
+                    # Try to extract probability from system_prompt
+                    system_prompt = trader.get("system_prompt", "")
+                    trader_name = trader.get("name")
+                    
+                    # Look for "Probability: X%" pattern in system_prompt (handles both "65.0%" and "65%")
+                    prob_match = re.search(r"Probability:\s*([\d.]+)%", system_prompt)
+                    if prob_match:
+                        try:
+                            probability_percent = float(prob_match.group(1))
+                            prediction_cents = max(2, min(98, int(round(probability_percent))))
+                            
+                            result = market_maker.place_market_making_orders(
+                                session_id=session_id,
+                                trader_name=trader_name,
+                                prediction=prediction_cents,
+                                spread=4,
+                                quantity=100
+                            )
+                            
+                            if result.get("error"):
+                                logger.warning(f"[BACKGROUND] Failed to place orders for {trader_name}: {result['error']}")
+                            else:
+                                orders_placed += 1
+                                trades_count = result.get("trades_count", 0)
+                                logger.info(
+                                    f"[BACKGROUND] Placed market making orders for {trader_name} at {prediction_cents} cents "
+                                    f"(matched {trades_count} trades, volume={result.get('volume', 0)})"
+                                )
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"[BACKGROUND] Failed to parse probability for {trader_name}: {e}")
+                    else:
+                        logger.warning(f"[BACKGROUND] Could not extract probability from system_prompt for {trader_name}")
             
-            if forecaster_class and prediction_result:
-                # Build system_prompt from prediction result
-                system_prompt_parts = []
+            logger.info(f"[BACKGROUND] Placed market making orders for {orders_placed} fundamental traders")
+            logger.info("[BACKGROUND] Orderbook and trades should now be populated - trading simulation will continue")
+        else:
+            # Normal flow: process forecaster responses
+            logger.info(f"[BACKGROUND] Storing {len(forecaster_responses)} forecaster responses in trader_state_live")
+            
+            for response in forecaster_responses:
+                forecaster_class = response.get("forecaster_class")
+                prediction_result = response.get("prediction_result", {})
                 
-                if prediction_result.get("prediction"):
-                    system_prompt_parts.append(f"Prediction: {prediction_result['prediction']}")
-                
-                prediction_probability = prediction_result.get("prediction_probability")
-                if prediction_probability is not None:
-                    system_prompt_parts.append(f"Probability: {prediction_probability:.1%}")
-                
-                if prediction_result.get("confidence") is not None:
-                    conf = prediction_result['confidence']
-                    system_prompt_parts.append(f"Confidence: {conf:.1%}")
-                
-                if prediction_result.get("reasoning"):
-                    system_prompt_parts.append(f"\nReasoning:\n{prediction_result['reasoning']}")
-                
-                if prediction_result.get("key_factors"):
-                    factors = prediction_result['key_factors']
-                    if isinstance(factors, list):
-                        factors_str = "\n".join(f"- {f}" for f in factors)
-                        system_prompt_parts.append(f"\nKey Factors:\n{factors_str}")
-                
-                system_prompt = "\n".join(system_prompt_parts)
-                
-                # Create or update trader_state_live record
-                existing_trader = trader_repo.get_trader(session_id, forecaster_class)
-                if existing_trader:
-                    trader_repo.update(existing_trader["id"], {"system_prompt": system_prompt})
-                else:
-                    trader_repo.create({
-                        "session_id": session_id,
-                        "trader_type": "fundamental",
-                        "name": forecaster_class,
-                        "system_prompt": system_prompt
-                    })
-                
-                # Place initial market making orders
-                if prediction_probability is not None:
-                    prediction_cents = max(2, min(98, int(round(prediction_probability * 100))))
-                    market_maker.place_market_making_orders(
-                        session_id=session_id,
-                        trader_name=forecaster_class,
-                        prediction=prediction_cents,
-                        spread=4,
-                        quantity=100
-                    )
+                if forecaster_class and prediction_result:
+                    # Build system_prompt from prediction result
+                    system_prompt_parts = []
+                    
+                    if prediction_result.get("prediction"):
+                        system_prompt_parts.append(f"Prediction: {prediction_result['prediction']}")
+                    
+                    prediction_probability = prediction_result.get("prediction_probability")
+                    if prediction_probability is not None:
+                        system_prompt_parts.append(f"Probability: {prediction_probability:.1%}")
+                    
+                    if prediction_result.get("confidence") is not None:
+                        conf = prediction_result['confidence']
+                        system_prompt_parts.append(f"Confidence: {conf:.1%}")
+                    
+                    if prediction_result.get("reasoning"):
+                        system_prompt_parts.append(f"\nReasoning:\n{prediction_result['reasoning']}")
+                    
+                    if prediction_result.get("key_factors"):
+                        factors = prediction_result['key_factors']
+                        if isinstance(factors, list):
+                            factors_str = "\n".join(f"- {f}" for f in factors)
+                            system_prompt_parts.append(f"\nKey Factors:\n{factors_str}")
+                    
+                    system_prompt = "\n".join(system_prompt_parts)
+                    
+                    # Create or update trader_state_live record
+                    existing_trader = trader_repo.get_trader(session_id, forecaster_class)
+                    if existing_trader:
+                        trader_repo.update(existing_trader["id"], {"system_prompt": system_prompt})
+                    else:
+                        trader_repo.create({
+                            "session_id": session_id,
+                            "trader_type": "fundamental",
+                            "name": forecaster_class,
+                            "system_prompt": system_prompt
+                        })
+                    
+                    # Place initial market making orders
+                    if prediction_probability is not None:
+                        prediction_cents = max(2, min(98, int(round(prediction_probability * 100))))
+                        market_maker.place_market_making_orders(
+                            session_id=session_id,
+                            trader_name=forecaster_class,
+                            prediction=prediction_cents,
+                            spread=4,
+                            quantity=100
+                        )
         
         # Step 3: Create and start the trading simulation
         logger.info("[BACKGROUND] Starting continuous trading simulation with 18 agents")
@@ -458,8 +515,21 @@ async def run_session(request: RunSessionRequest, background_tasks: BackgroundTa
     logger.info(f"Question type: {request.question_type}")
     logger.info(f"Trading interval: {request.trading_interval_seconds}s")
     
-    # Create session in database
+    # Check if a session with the same question_text already exists
+    from app.db.repositories import TraderRepository
+    
     session_repo = SessionRepository()
+    trader_repo = TraderRepository()
+    
+    # Find existing sessions with the same question_text
+    existing_sessions = session_repo.find_all(
+        filters={"question_text": request.question_text},
+        order_by="created_at",
+        order_desc=True,
+        limit=1
+    )
+    
+    # Create session in database
     session = session_repo.create_session(
         question_text=request.question_text,
         question_type=request.question_type
@@ -467,6 +537,93 @@ async def run_session(request: RunSessionRequest, background_tasks: BackgroundTa
     
     session_id = session["id"]
     logger.info(f"Session created: {session_id}")
+    
+    # If a previous session exists, copy trader_state_live data from it
+    if existing_sessions:
+        previous_session_id = existing_sessions[0]["id"]
+        logger.info(f"Found previous session with same question_text: {previous_session_id}")
+        logger.info("Loading trader_state_live data from previous session...")
+        
+        # Get all traders from the previous session
+        previous_traders = trader_repo.get_session_traders(previous_session_id)
+        logger.info(f"Found {len(previous_traders)} traders in previous session")
+        
+        # Copy each trader's data to the new session (excluding position and pnl which should start fresh)
+        for trader in previous_traders:
+            # Only copy system_prompt and trader metadata, reset position and pnl
+            trader_repo.create({
+                "session_id": session_id,
+                "trader_type": trader.get("trader_type"),
+                "name": trader.get("name"),
+                "system_prompt": trader.get("system_prompt"),
+                "position": 0,  # Start fresh
+                "pnl": 0  # Start fresh
+            })
+            logger.info(f"Copied trader {trader.get('name')} system_prompt to new session")
+        
+        logger.info(f"Successfully copied {len(previous_traders)} trader states from previous session")
+        
+        # Copy orderbook_live records to orderbook_history for the new session
+        from app.db.repositories import BaseRepository
+        orderbook_repo = BaseRepository("orderbook_live")
+        orderbook_history_repo = BaseRepository("orderbook_history")
+        trades_repo = BaseRepository("trades")
+        
+        # Get all orderbook_live records from previous session
+        previous_orders = orderbook_repo.find_all(
+            filters={"session_id": previous_session_id},
+            order_by="created_at",
+            order_desc=False
+        )
+        logger.info(f"Found {len(previous_orders)} orderbook records in previous session")
+        
+        # Copy orders to orderbook_history for the new session
+        orders_copied = 0
+        for order in previous_orders:
+            try:
+                orderbook_history_repo.create({
+                    "session_id": session_id,
+                    "trader_name": order.get("trader_name"),
+                    "side": order.get("side"),
+                    "price": order.get("price"),
+                    "quantity": order.get("quantity"),
+                    "filled_quantity": order.get("filled_quantity"),
+                    "status": order.get("status"),
+                    "created_at": order.get("created_at")  # Preserve original timestamp
+                })
+                orders_copied += 1
+            except Exception as e:
+                logger.warning(f"Failed to copy order {order.get('id')}: {e}")
+        
+        logger.info(f"Copied {orders_copied} orderbook records to orderbook_history")
+        
+        # Get all trades from previous session
+        previous_trades = trades_repo.find_all(
+            filters={"session_id": previous_session_id},
+            order_by="created_at",
+            order_desc=False
+        )
+        logger.info(f"Found {len(previous_trades)} trades in previous session")
+        
+        # Copy trades to the new session (so graph shows history)
+        trades_copied = 0
+        for trade in previous_trades:
+            try:
+                trades_repo.create({
+                    "session_id": session_id,
+                    "buyer_name": trade.get("buyer_name"),
+                    "seller_name": trade.get("seller_name"),
+                    "price": trade.get("price"),
+                    "quantity": trade.get("quantity"),
+                    "created_at": trade.get("created_at")  # Preserve original timestamp
+                })
+                trades_copied += 1
+            except Exception as e:
+                logger.warning(f"Failed to copy trade {trade.get('id')}: {e}")
+        
+        logger.info(f"Copied {trades_copied} trades to new session (graph will show history)")
+    else:
+        logger.info("No previous session found with same question_text, starting fresh")
     
     # Extract agent counts if provided
     agent_counts = None
