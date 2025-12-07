@@ -228,9 +228,9 @@ async def get_forecast(forecast_id: str):
 
 
 @app.get("/api/forecasts")
-async def list_forecasts(limit: int = 10, offset: int = 0):
+async def list_forecasts(limit: int = 10, offset: int = 0, question_text: Optional[str] = None):
     """
-    List all past forecast sessions
+    List all past forecast sessions, optionally filtered by question_text
     """
     logger.info(f"GET /api/forecasts - Listing forecasts (limit={limit}, offset={offset})")
     from app.db import SessionRepository
@@ -238,8 +238,15 @@ async def list_forecasts(limit: int = 10, offset: int = 0):
     logger.info("Initializing SessionRepository")
     session_repo = SessionRepository()
     
+    # Build filters
+    filters = {}
+    if question_text:
+        filters["question_text"] = question_text
+        logger.info(f"Filtering by question_text: {question_text[:50]}...")
+    
     # Get sessions ordered by created_at descending
     sessions = session_repo.find_all(
+        filters=filters if filters else None,
         order_by="created_at",
         order_desc=True,
         limit=limit,
@@ -247,7 +254,7 @@ async def list_forecasts(limit: int = 10, offset: int = 0):
     )
     
     # Get total count
-    total = session_repo.count()
+    total = session_repo.count(filters=filters if filters else None)
     
     return {
         "forecasts": sessions,

@@ -1,9 +1,15 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useTradingStore } from "@/lib/store"
 import { useDemoMode } from "@/hooks/useDemoMode"
+import { useSearchParams } from "next/navigation"
 import Image from "next/image"
+import { api } from "@/lib/api"
+import { Forecast } from "@/types/forecast"
+import { Press_Start_2P } from "next/font/google"
+
+const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
 const workerSprites = [
   "/sprites/worker1.png",
@@ -292,13 +298,105 @@ const OrderBookModal = ({
   )
 }
 
-export default function Page() {
+function OfficePageContent() {
   const { initializeDemoAgents } = useTradingStore()
   const [orderBookOpen, setOrderBookOpen] = useState(false)
+  const searchParams = useSearchParams()
+  const [forecast, setForecast] = useState<Forecast | null>(null)
+  const [showResult, setShowResult] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     initializeDemoAgents(18)
   }, [initializeDemoAgents])
+
+  const processForecast = async (queryText: string) => {
+    setIsLoading(true)
+    setForecast(null)
+    setShowResult(false)
+
+    try {
+      // Check if forecast exists in database
+      const existingForecasts = await api.forecasts.list(1, 0, queryText.trim()) as { forecasts: Forecast[], total: number }
+      let forecastId: string | null = null
+
+      if (existingForecasts.forecasts && existingForecasts.forecasts.length > 0) {
+        // Find a completed forecast with matching question
+        const completed = existingForecasts.forecasts.find(
+          (f) => f.status === "completed" && f.question_text.trim().toLowerCase() === queryText.trim().toLowerCase()
+        )
+        if (completed) {
+          forecastId = completed.id
+        }
+      }
+
+      // If no completed forecast found, create a new one
+      if (!forecastId) {
+        const newForecast = await api.forecasts.create({
+          question_text: queryText.trim(),
+          question_type: "binary",
+          agent_counts: {
+            phase_1_discovery: 2,
+            phase_2_validation: 2,
+            phase_3_research: 2,
+            phase_4_synthesis: 1,
+          },
+        }) as Forecast
+        forecastId = newForecast.id
+
+        // Poll for completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const forecastData = await api.forecasts.get(forecastId!) as Forecast
+            if (forecastData.status === "completed" || forecastData.status === "failed") {
+              clearInterval(pollInterval)
+              setForecast(forecastData)
+              setShowResult(true)
+              setIsLoading(false)
+            }
+          } catch (error) {
+            console.error("Error polling forecast:", error)
+            clearInterval(pollInterval)
+            setIsLoading(false)
+          }
+        }, 2000) // Poll every 2 seconds
+
+        // Timeout after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          if (isLoading) {
+            setIsLoading(false)
+            alert("Forecast is taking longer than expected. Please check back later.")
+          }
+        }, 300000)
+      } else {
+        // Use existing forecast
+        const forecastData = await api.forecasts.get(forecastId) as Forecast
+        setForecast(forecastData)
+        setShowResult(true)
+        setIsLoading(false)
+      }
+    } catch (error) {
+      console.error("Error processing forecast:", error)
+      setIsLoading(false)
+      alert("Failed to process your query. Please try again.")
+    }
+  }
+
+  useEffect(() => {
+    const query = searchParams.get("q")
+    if (query) {
+      processForecast(query)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const handleCloseResult = () => {
+    setShowResult(false)
+    setForecast(null)
+    // Remove query parameter from URL
+    window.history.replaceState({}, "", "/office")
+  }
 
   useDemoMode(true)
 
@@ -349,10 +447,73 @@ export default function Page() {
 
       <OrderBookModal open={orderBookOpen} onClose={() => setOrderBookOpen(false)} />
 
+      {/* Loading overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 text-[#f7f5f0] drop-shadow-[0_4px_12px_rgba(0,0,0,0.55)]">
+            <div className="text-xl tracking-[0.18em] uppercase flex items-center gap-1">
+              <span>Analyzing</span>
+              <span className="inline-flex w-10 justify-between text-lg">
+                <span className="animate-[blink_1s_infinite]">.</span>
+                <span className="animate-[blink_1.1s_infinite]">.</span>
+                <span className="animate-[blink_1.2s_infinite]">.</span>
+              </span>
+            </div>
+            <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20 relative">
+              <div className="absolute inset-y-0 left-0 w-1/3 animate-[slide_1.8s_ease-in-out_infinite] bg-white/60 rounded-full" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Result overlay */}
+      {showResult && forecast && forecast.prediction_result && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-2xl bg-[#1a1f2e] border-4 border-[#2d3748] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.75)] p-8 text-white">
+            <button
+              onClick={handleCloseResult}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl font-bold"
+            >
+              ×
+            </button>
+            
+            <div className="text-center">
+              <h2 className={`${pressStart.className} text-2xl tracking-[0.15em] uppercase mb-6 text-[#f7f5f0]`}>
+                Prediction
+              </h2>
+              <p className="text-gray-300 mb-8">{forecast.question_text}</p>
+
+              <div className="bg-[#0f172a]/50 rounded-lg p-8 border border-[#2d3748]">
+                <div className="text-4xl font-bold text-[#f7f5f0] mb-4">
+                  {forecast.prediction_result.prediction}
+                </div>
+                {forecast.prediction_result.prediction_probability !== undefined && (
+                  <div className={`${pressStart.className} text-5xl tracking-[0.1em] text-[#2d7dd2]`}>
+                    {Math.round(forecast.prediction_result.prediction_probability * 100)}%
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CRT/Scanline Effects */}
       <div className="fixed inset-0 pointer-events-none z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.12)_50%),linear-gradient(90deg,rgba(255,0,0,0.05),rgba(0,255,0,0.02),rgba(0,0,255,0.05))] bg-[length:100%_2px,3px_100%] opacity-25 mix-blend-overlay" />
       <div className="fixed inset-0 pointer-events-none z-50 shadow-[inset_0_0_120px_rgba(0,0,0,0.82)]" />
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen w-full flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    }>
+      <OfficePageContent />
+    </Suspense>
   )
 }
 

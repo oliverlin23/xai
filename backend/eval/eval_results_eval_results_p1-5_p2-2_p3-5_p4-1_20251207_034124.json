@@ -1,0 +1,332 @@
+{
+  "eval_parameters": {
+    "eval_set": "Kalshi Market Predictions Eval Set",
+    "eval_file": "kalshi_eval_set.json",
+    "num_questions": 8,
+    "total_questions_in_set": 8,
+    "agent_counts": {
+      "phase_1_discovery": 5,
+      "phase_2_validation": 2,
+      "phase_3_research": 5,
+      "phase_4_synthesis": 1
+    },
+    "max_concurrent": null,
+    "eval_date": "2025-12-07T03:41:24.100593"
+  },
+  "summary": {
+    "total_questions": 8,
+    "failed_forecasts": 0,
+    "orchestrated": {
+      "successful_forecasts": 8,
+      "mean_brier_score": 0.1369,
+      "std_brier_score": 0.1498,
+      "mean_calibration_error": 0.1062,
+      "max_calibration_error": 0.22,
+      "min_calibration_error": 0.03,
+      "std_calibration_error": 0.0696,
+      "direction_accuracy": 0.875,
+      "total_tokens": 633193,
+      "mean_tokens": 79149.0,
+      "mean_duration_seconds": 113.06,
+      "min_duration_seconds": 88.57,
+      "max_duration_seconds": 122.38
+    },
+    "baseline": {
+      "successful_forecasts": 8,
+      "mean_brier_score": 0.1084,
+      "std_brier_score": 0.1248,
+      "mean_calibration_error": 0.0963,
+      "max_calibration_error": 0.17,
+      "min_calibration_error": 0.03,
+      "std_calibration_error": 0.0479,
+      "direction_accuracy": 0.875,
+      "total_tokens": 50722,
+      "mean_tokens": 6340.0,
+      "mean_duration_seconds": 21.87,
+      "min_duration_seconds": 19.29,
+      "max_duration_seconds": 25.29
+    },
+    "comparison": {
+      "calibration_error_improvement": -0.0099,
+      "calibration_error_improvement_pct": -10.28,
+      "brier_score_improvement": -0.0285,
+      "speed_ratio": 0.19,
+      "token_ratio": 12.48
+    }
+  },
+  "results": [
+    {
+      "question_id": "kalshi_001",
+      "question_text": "Will Nicolas Maduro, the President of Venezuela, be out of office by the end of 2025?",
+      "ground_truth": 0.13,
+      "ground_truth_percentage": 13,
+      "orchestrated": {
+        "predicted_prob": 0.35,
+        "predicted_percentage": 35.0,
+        "prediction": "No",
+        "prediction_probability": 0.35,
+        "confidence": 0.8,
+        "brier_score": 0.1225,
+        "calibration_error": 0.22,
+        "direction_correct": true,
+        "session_id": "590e0193-2ca9-44a8-b40d-5b9fd33ad94d",
+        "total_duration_seconds": 122.38,
+        "total_cost_tokens": 74662,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.18,
+        "predicted_percentage": 18.0,
+        "prediction": "No",
+        "prediction_probability": 0.18,
+        "confidence": 0.78,
+        "brier_score": 0.0324,
+        "calibration_error": 0.05,
+        "direction_correct": true,
+        "total_duration_seconds": 25.288668,
+        "total_cost_tokens": 5675,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 148.05
+    },
+    {
+      "question_id": "kalshi_002",
+      "question_text": "Will the US Federal Reserve choose to reduce interest rates by 25 basis points in December?",
+      "ground_truth": 0.9,
+      "ground_truth_percentage": 90,
+      "orchestrated": {
+        "predicted_prob": 0.87,
+        "predicted_percentage": 87.0,
+        "prediction": "Yes",
+        "prediction_probability": 0.87,
+        "confidence": 0.88,
+        "brier_score": 0.0169,
+        "calibration_error": 0.03,
+        "direction_correct": true,
+        "session_id": "4733702d-1e69-4727-bd08-0562315355ba",
+        "total_duration_seconds": 88.57,
+        "total_cost_tokens": 73046,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.85,
+        "predicted_percentage": 85.0,
+        "prediction": "Yes",
+        "prediction_probability": 0.85,
+        "confidence": 0.8,
+        "brier_score": 0.0225,
+        "calibration_error": 0.05,
+        "direction_correct": true,
+        "total_duration_seconds": 21.860917,
+        "total_cost_tokens": 5954,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 110.61
+    },
+    {
+      "question_id": "kalshi_003",
+      "question_text": "Will Abelardo de la Espriella win Colombia's Presidential Election in 2026?",
+      "ground_truth": 0.35,
+      "ground_truth_percentage": 35,
+      "orchestrated": {
+        "predicted_prob": 0.25,
+        "predicted_percentage": 25.0,
+        "prediction": "No",
+        "prediction_probability": 0.25,
+        "confidence": 0.75,
+        "brier_score": 0.0625,
+        "calibration_error": 0.1,
+        "direction_correct": true,
+        "session_id": "b4ea1377-b49a-43ee-a573-6a5fbf479854",
+        "total_duration_seconds": 112.4,
+        "total_cost_tokens": 85193,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.18,
+        "predicted_percentage": 18.0,
+        "prediction": "No",
+        "prediction_probability": 0.18,
+        "confidence": 0.75,
+        "brier_score": 0.0324,
+        "calibration_error": 0.17,
+        "direction_correct": true,
+        "total_duration_seconds": 19.81063,
+        "total_cost_tokens": 6832,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 132.4
+    },
+    {
+      "question_id": "kalshi_004",
+      "question_text": "Will NVIDIA be the world's largest company at the end of June 2026?",
+      "ground_truth": 0.5,
+      "ground_truth_percentage": 50,
+      "orchestrated": {
+        "predicted_prob": 0.28,
+        "predicted_percentage": 28.0,
+        "prediction": "No",
+        "prediction_probability": 0.28,
+        "confidence": 0.65,
+        "brier_score": 0.5184,
+        "calibration_error": 0.22,
+        "direction_correct": false,
+        "session_id": "2141217a-fec2-4108-a85b-484e9e0a297c",
+        "total_duration_seconds": 115.21,
+        "total_cost_tokens": 78616,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.35,
+        "predicted_percentage": 35.0,
+        "prediction": "No",
+        "prediction_probability": 0.35,
+        "confidence": 0.75,
+        "brier_score": 0.4225,
+        "calibration_error": 0.15,
+        "direction_correct": false,
+        "total_duration_seconds": 24.040964,
+        "total_cost_tokens": 6315,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 139.42
+    },
+    {
+      "question_id": "kalshi_005",
+      "question_text": "Will OpenAI IPO by the end of 2026?",
+      "ground_truth": 0.33,
+      "ground_truth_percentage": 33,
+      "orchestrated": {
+        "predicted_prob": 0.25,
+        "predicted_percentage": 25.0,
+        "prediction": "No",
+        "prediction_probability": 0.25,
+        "confidence": 0.85,
+        "brier_score": 0.0625,
+        "calibration_error": 0.08,
+        "direction_correct": true,
+        "session_id": "9e98c55d-f2f2-4ffb-9685-51c7517294fc",
+        "total_duration_seconds": 112.51,
+        "total_cost_tokens": 76474,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.25,
+        "predicted_percentage": 25.0,
+        "prediction": "No",
+        "prediction_probability": 0.25,
+        "confidence": 0.75,
+        "brier_score": 0.0625,
+        "calibration_error": 0.08,
+        "direction_correct": true,
+        "total_duration_seconds": 19.287409,
+        "total_cost_tokens": 6711,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 131.97
+    },
+    {
+      "question_id": "kalshi_006",
+      "question_text": "Will the Democratic Party control the House of Representatives following the November 3rd, 2026 US elections?",
+      "ground_truth": 0.75,
+      "ground_truth_percentage": 75,
+      "orchestrated": {
+        "predicted_prob": 0.7,
+        "predicted_percentage": 70.0,
+        "prediction": "Yes",
+        "prediction_probability": 0.7,
+        "confidence": 0.8,
+        "brier_score": 0.09,
+        "calibration_error": 0.05,
+        "direction_correct": true,
+        "session_id": "b9c474d4-1597-4d57-b373-81e546b407bf",
+        "total_duration_seconds": 118.93,
+        "total_cost_tokens": 78095,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.78,
+        "predicted_percentage": 78.0,
+        "prediction": "Yes",
+        "prediction_probability": 0.78,
+        "confidence": 0.72,
+        "brier_score": 0.0484,
+        "calibration_error": 0.03,
+        "direction_correct": true,
+        "total_duration_seconds": 19.970772,
+        "total_cost_tokens": 6307,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 139.08
+    },
+    {
+      "question_id": "kalshi_007",
+      "question_text": "Will Barcelona win the La Liga 2025-2026?",
+      "ground_truth": 0.5,
+      "ground_truth_percentage": 50,
+      "orchestrated": {
+        "predicted_prob": 0.6,
+        "predicted_percentage": 60.0,
+        "prediction": "Yes",
+        "prediction_probability": 0.6,
+        "confidence": 0.65,
+        "brier_score": 0.16,
+        "calibration_error": 0.1,
+        "direction_correct": true,
+        "session_id": "5ee35515-e50c-4093-a6df-0f650a1a7bb8",
+        "total_duration_seconds": 118.28,
+        "total_cost_tokens": 85058,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.62,
+        "predicted_percentage": 62.0,
+        "prediction": "Yes",
+        "prediction_probability": 0.62,
+        "confidence": 0.78,
+        "brier_score": 0.1444,
+        "calibration_error": 0.12,
+        "direction_correct": true,
+        "total_duration_seconds": 20.086673,
+        "total_cost_tokens": 6250,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 138.54
+    },
+    {
+      "question_id": "kalshi_008",
+      "question_text": "Will OpenAI have the top AI model at the end of December 2025?",
+      "ground_truth": 0.2,
+      "ground_truth_percentage": 20,
+      "orchestrated": {
+        "predicted_prob": 0.25,
+        "predicted_percentage": 25.0,
+        "prediction": "No",
+        "prediction_probability": 0.25,
+        "confidence": 0.75,
+        "brier_score": 0.0625,
+        "calibration_error": 0.05,
+        "direction_correct": true,
+        "session_id": "596c4741-bec4-4da9-871c-0ed89774b26f",
+        "total_duration_seconds": 116.23,
+        "total_cost_tokens": 82049,
+        "status": "completed"
+      },
+      "baseline": {
+        "predicted_prob": 0.32,
+        "predicted_percentage": 32.0,
+        "prediction": "No",
+        "prediction_probability": 0.32,
+        "confidence": 0.65,
+        "brier_score": 0.1024,
+        "calibration_error": 0.12,
+        "direction_correct": true,
+        "total_duration_seconds": 24.631504,
+        "total_cost_tokens": 6678,
+        "status": "completed"
+      },
+      "eval_duration_seconds": 141.19
+    }
+  ],
+  "total_eval_duration_seconds": 148.05
+}

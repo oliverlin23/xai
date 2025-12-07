@@ -52,20 +52,52 @@
       "ground_truth_percentage": 33,
       "source": "Kalshi",
       "category": "Market/Financial"
+    },
+    {
+      "id": "kalshi_006",
+      "question_text": "Will the Democratic Party control the House of Representatives following the November 3rd, 2026 US elections?",
+      "question_type": "binary",
+      "resolution_criteria": "This market will resolve according to the party that controls the House of Representatives following the 2026 U.S. House elections scheduled for November 3, 2026.",
+      "ground_truth": 0.75,
+      "ground_truth_percentage": 75,
+      "source": "Kalshi",
+      "category": "Political"
+    },
+    {
+      "id": "kalshi_007",
+      "question_text": "Will Barcelona win the La Liga 2025-2026?",
+      "question_type": "binary",
+      "resolution_criteria": "This market will resolve to \"Yes\" if Barcelona is officially crowned the winner of the 2025–26 La Liga. Otherwise, it will resolve to \"No\".",
+      "ground_truth": 0.50,
+      "ground_truth_percentage": 50,
+      "source": "Kalshi",
+      "category": "Sports"
+    },
+    {
+      "id": "kalshi_008",
+      "question_text": "Will OpenAI have the top AI model at the end of December 2025?",
+      "question_type": "binary",
+      "resolution_criteria": "This market will resolve to Yes if OpenAI owns the model with the highest arena score based on the Chatbot Arena LLM Leaderboard (https://lmarena.ai/) when the table under the \"Leaderboard\" tab is checked on December 31, 2025, 12:00 PM ET.",
+      "ground_truth": 0.20,
+      "ground_truth_percentage": 20,
+      "source": "Kalshi",
+      "category": "Technology"
     }
   ],
   "metadata": {
-    "total_questions": 5,
+    "total_questions": 8,
     "date_created": "2025-01-27",
     "ground_truth_range": {
       "min": 0.13,
       "max": 0.90,
-      "mean": 0.442
+      "mean": 0.4575
     },
     "categories": {
-      "Political": 2,
+      "Political": 3,
       "Economic": 1,
-      "Market/Financial": 2
+      "Market/Financial": 2,
+      "Sports": 1,
+      "Technology": 1
     }
   }
 }

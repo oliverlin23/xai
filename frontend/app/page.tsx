@@ -19,13 +19,14 @@ export default function Page() {
     if (!query.trim() || isLoading) return
     setIsLoading(true)
     setLoadStarted(true)
-    // allow CSS transition to pick up opacity change
+    // next frame so CSS transition can detect the change
     requestAnimationFrame(() => setOverlayVisible(true))
-    // fade to black shortly before navigating
+    // Start fade to black before navigating
     setTimeout(() => setOverlayFadeOut(true), 1500)
     setTimeout(() => {
-      router.push("/office")
-    }, 2400)
+      // Navigate to office with query as URL parameter
+      router.push(`/office?q=${encodeURIComponent(query.trim())}`)
+    }, 2400) // allow fade-out before routing
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
