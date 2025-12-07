@@ -1,7 +1,7 @@
 [project]
-name = "grok-tool"
+name = "x-search"
 version = "0.1.0"
-description = "GrokAI tool for retrieving topic-focused tweets with graph-aware expansion"
+description = "X (Twitter) search tool with community-based expansion"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,8 +11,14 @@ dependencies = [
     "mcp>=0.1.0",
 ]
 
+[project.scripts]
+x-search = "x_search.cli:main"
+x-search-mcp = "x_search.mcp_server:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["x_search*"]

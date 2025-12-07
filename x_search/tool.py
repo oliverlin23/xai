@@ -1,8 +1,9 @@
+"""Core X Search tool - fetches tweets with community-based expansion."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import os
 import random
 from collections import Counter
@@ -13,75 +14,9 @@ from typing import Any, Iterable
 import httpx
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, validator
 
-LOGGER = logging.getLogger("grok_tool")
+from .communities import COMMUNITIES
 
-# Hardcoded communities - curated spheres of influence on X
-COMMUNITIES: dict[str, list[str]] = {
-    "tech_vc": [
-        "elonmusk",
-        "pmarca",
-        "balajis",
-        "paulg",
-        "naval",
-        "davidsacks",
-        "chamath",
-        "garrytan",
-        "sama",
-    ],
-    "maga_populist": [
-        "TuckerCarlson",
-        "JDVance1",
-        "DonaldJTrumpJr",
-        "charliekirk11",
-        "RealCandaceO",
-        "RudyGiuliani",
-        "SebGorka",
-    ],
-    "progressive_left": [
-        "AOC",
-        "BernieSanders",
-        "RBReich",
-        "IlhanMN",
-        "RashidaTlaib",
-        "eaborz",
-        "ProPublica",
-    ],
-    "crypto_web3": [
-        "VitalikButerin",
-        "cz_binance",
-        "brian_armstrong",
-        "APompliano",
-        "SatoshiLite",
-        "aantonop",
-        "ethereumJoseph",
-    ],
-    "rationalist_ai": [
-        "ESYudkowsky",
-        "scottaaronson",
-        "robinhanson",
-        "tylercowen",
-        "slaborz",
-        "AISafetyMemes",
-        "AnthropicAI",
-    ],
-    "manosphere_selfhelp": [
-        "joerogan",
-        "jordanbpeterson",
-        "lexfridman",
-        "hubermanlab",
-        "TheRealTaborz",
-        "jaborz",
-    ],
-    "media_journalism": [
-        "mtaibbi",
-        "ggreenwald",
-        "ezraklein",
-        "chrislhayes",
-        "andersoncooper",
-        "KattyKay_",
-        "maggieNYT",
-    ],
-}
+LOGGER = logging.getLogger("x_search")
 
 
 def _utc_now() -> datetime:
@@ -92,8 +27,8 @@ class XApiError(RuntimeError):
     """Raised when the X API returns an unrecoverable error."""
 
 
-class GrokXToolRequest(BaseModel):
-    """Incoming payload Grok will send to this tool."""
+class XSearchRequest(BaseModel):
+    """Incoming request payload."""
 
     topic: str = Field(..., min_length=1, max_length=256)
     username: str = Field(..., min_length=1, max_length=80)
@@ -102,7 +37,10 @@ class GrokXToolRequest(BaseModel):
     lang: str | None = Field(default="en", max_length=8)
     include_retweets: bool = False
     include_replies: bool = False
-    community: str | None = Field(default=None, description="Community sphere to search (e.g., tech_vc, maga_populist)")
+    community: str | None = Field(
+        default=None,
+        description="Community sphere to search (e.g., tech_vc, maga_right)",
+    )
 
     @validator("topic")
     def _sanitize_topic(cls, value: str) -> str:
@@ -143,7 +81,7 @@ class TweetResult(BaseModel):
     url: HttpUrl
 
 
-class GrokXToolResponse(BaseModel):
+class XSearchResponse(BaseModel):
     topic: str
     seed_user: str
     start_time: datetime
@@ -152,8 +90,10 @@ class GrokXToolResponse(BaseModel):
     related_users: list[RelatedUser]
 
 
-class GrokXToolConfig(BaseModel):
-    bearer_token: str | None = Field(default_factory=lambda: os.getenv("X_BEARER_TOKEN"))
+class XSearchConfig(BaseModel):
+    bearer_token: str | None = Field(
+        default_factory=lambda: os.getenv("X_BEARER_TOKEN")
+    )
     base_url: str = "https://api.x.com/2"
     http_timeout_seconds: float = 15.0
     request_retries: int = 3
@@ -181,14 +121,14 @@ class _User:
 class XApiClient:
     """Minimal async client around the X v2 REST API."""
 
-    def __init__(self, config: GrokXToolConfig):
+    def __init__(self, config: XSearchConfig):
         self._config = config
         self._client = httpx.AsyncClient(
             base_url=config.base_url,
             timeout=config.http_timeout_seconds,
             headers={
                 "Authorization": f"Bearer {config.bearer_token}",
-                "User-Agent": "grok-x-tool/0.1",
+                "User-Agent": "x-search/0.1",
             },
         )
 
@@ -214,7 +154,9 @@ class XApiClient:
             "max_results": min(max_results, 1000),
             "user.fields": "name,username",
         }
-        payload = await self._request("GET", f"/users/{user_id}/followers", params=params)
+        payload = await self._request(
+            "GET", f"/users/{user_id}/followers", params=params
+        )
         return [
             _User(id=item["id"], username=item["username"], name=item.get("name"))
             for item in payload.get("data", [])
@@ -225,7 +167,9 @@ class XApiClient:
             "max_results": min(max_results, 1000),
             "user.fields": "name,username",
         }
-        payload = await self._request("GET", f"/users/{user_id}/following", params=params)
+        payload = await self._request(
+            "GET", f"/users/{user_id}/following", params=params
+        )
         return [
             _User(id=item["id"], username=item["username"], name=item.get("name"))
             for item in payload.get("data", [])
@@ -239,7 +183,7 @@ class XApiClient:
     ) -> dict[str, Any]:
         params = {
             "query": query,
-            "max_results": min(100, max_results),
+            "max_results": max(10, min(100, max_results)),
             "start_time": start_time.astimezone(UTC).isoformat().replace("+00:00", "Z"),
             "tweet.fields": "id,text,author_id,created_at,public_metrics",
             "expansions": "author_id",
@@ -258,13 +202,15 @@ class XApiClient:
         for attempt in range(1, self._config.request_retries + 2):
             try:
                 response = await self._client.request(method, path, params=params)
-            except httpx.HTTPError as exc:  # transient network issue
+            except httpx.HTTPError as exc:
                 last_exc = exc
             else:
                 if response.status_code == 429:
                     reset_after = response.headers.get("x-rate-limit-reset")
-                    delay = backoff if not reset_after else max(
-                        1, int(float(reset_after)) - int(_utc_now().timestamp())
+                    delay = (
+                        backoff
+                        if not reset_after
+                        else max(1, int(float(reset_after)) - int(_utc_now().timestamp()))
                     )
                     LOGGER.warning("X API rate limit hit; sleeping %s", delay)
                     await asyncio.sleep(delay)
@@ -272,21 +218,23 @@ class XApiClient:
                     continue
                 if response.is_success:
                     return response.json()
-                last_exc = XApiError(f"X API error {response.status_code}: {response.text}")
+                last_exc = XApiError(
+                    f"X API error {response.status_code}: {response.text}"
+                )
             await asyncio.sleep(backoff)
             backoff *= 2
         raise XApiError(f"X API request failed after retries: {last_exc}") from last_exc
 
 
-class GrokXTool:
-    """Orchestrates the experience end-to-end."""
+class XSearchTool:
+    """Orchestrates tweet search with community expansion."""
 
-    def __init__(self, config: GrokXToolConfig | None = None):
-        self._config = config or GrokXToolConfig()
+    def __init__(self, config: XSearchConfig | None = None):
+        self._config = config or XSearchConfig()
 
     async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
-            request = GrokXToolRequest(**payload)
+            request = XSearchRequest(**payload)
         except ValidationError as exc:
             raise ValueError(f"invalid payload: {exc}") from exc
 
@@ -295,7 +243,7 @@ class GrokXTool:
             related_users = await self._expand_related_users(client, seed_user)
             tweets = await self._fetch_tweets(client, seed_user, related_users, request)
 
-        response = GrokXToolResponse(
+        response = XSearchResponse(
             topic=request.topic,
             seed_user=seed_user.username,
             start_time=request.start_time,
@@ -310,6 +258,9 @@ class GrokXTool:
         client: XApiClient,
         seed_user: _User,
     ) -> list[RelatedUser]:
+        if self._config.max_related_users == 0:
+            return []
+
         sample_followers = await client.get_followers(
             seed_user.id,
             max_results=self._config.follower_sample_size,
@@ -356,7 +307,7 @@ class GrokXTool:
         client: XApiClient,
         seed_user: _User,
         related_users: list[RelatedUser],
-        request: GrokXToolRequest,
+        request: XSearchRequest,
     ) -> list[TweetResult]:
         all_tweets: list[TweetResult] = []
 
@@ -375,11 +326,13 @@ class GrokXTool:
         )
         all_tweets.extend(self._map_tweets(seed_payload))
 
-        # If a community is specified, batch search all community members in one query
+        # If a community is specified, batch search all community members
         if request.community:
             community_users = COMMUNITIES.get(request.community, [])
             # Filter out the seed user if they're in the community
-            community_users = [u for u in community_users if u.lower() != seed_user.username.lower()]
+            community_users = [
+                u for u in community_users if u.lower() != seed_user.username.lower()
+            ]
 
             if community_users:
                 community_query = self._build_query(
@@ -396,7 +349,7 @@ class GrokXTool:
                 )
                 all_tweets.extend(self._map_tweets(community_payload))
 
-        # Legacy: search related users individually (if any from graph expansion)
+        # Search related users individually (from graph expansion)
         if related_users:
             semaphore = asyncio.Semaphore(self._config.search_concurrency)
 
@@ -416,7 +369,9 @@ class GrokXTool:
                     )
                 return self._map_tweets(payload)
 
-            tweet_batches = await asyncio.gather(*(_search(user) for user in related_users))
+            tweet_batches = await asyncio.gather(
+                *(_search(user) for user in related_users)
+            )
             for batch in tweet_batches:
                 all_tweets.extend(batch)
 
@@ -427,7 +382,9 @@ class GrokXTool:
     @staticmethod
     def _map_tweets(payload: dict[str, Any]) -> list[TweetResult]:
         data = payload.get("data", [])
-        includes = {user["id"]: user for user in payload.get("includes", {}).get("users", [])}
+        includes = {
+            user["id"]: user for user in payload.get("includes", {}).get("users", [])
+        }
         results: list[TweetResult] = []
         for item in data:
             author = includes.get(item["author_id"])
@@ -439,7 +396,9 @@ class GrokXTool:
                 text=item["text"],
                 author_username=author["username"],
                 author_name=author.get("name"),
-                created_at=datetime.fromisoformat(item["created_at"].replace("Z", "+00:00")),
+                created_at=datetime.fromisoformat(
+                    item["created_at"].replace("Z", "+00:00")
+                ),
                 like_count=metrics.get("like_count"),
                 reply_count=metrics.get("reply_count"),
                 retweet_count=metrics.get("retweet_count"),
@@ -484,18 +443,29 @@ class GrokXTool:
         return " ".join(clauses)
 
 
-async def run_tool(payload: dict[str, Any], config: GrokXToolConfig | None = None) -> dict[str, Any]:
+async def run_tool(
+    payload: dict[str, Any], config: XSearchConfig | None = None
+) -> dict[str, Any]:
     """Convenience coroutine to execute the tool."""
-    tool = GrokXTool(config=config)
+    tool = XSearchTool(config=config)
     return await tool.run(payload)
 
 
-def run_tool_sync(payload: dict[str, Any], config: GrokXToolConfig | None = None) -> dict[str, Any]:
-    """Sync helper for environments where Grok expects a blocking call."""
+def run_tool_sync(
+    payload: dict[str, Any], config: XSearchConfig | None = None
+) -> dict[str, Any]:
+    """Sync helper for blocking call environments."""
 
     def _runner() -> dict[str, Any]:
         return asyncio.run(run_tool(payload, config=config))
 
     return _runner()
+
+
+# Backwards compatibility aliases
+GrokXTool = XSearchTool
+GrokXToolConfig = XSearchConfig
+GrokXToolRequest = XSearchRequest
+GrokXToolResponse = XSearchResponse
 
 
