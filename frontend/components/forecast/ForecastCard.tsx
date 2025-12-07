@@ -64,11 +64,15 @@ export function ForecastCard({ prediction, prediction_probability, confidence, r
 
       <div className="mb-8">
         <h3 className="text-lg font-semibold text-gray-900 mb-3">Reasoning</h3>
-        <div className="space-y-2 text-gray-700 leading-relaxed">
+        <div className="space-y-2 font-mono text-[13px] md:text-sm text-gray-800 leading-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 whitespace-pre-wrap">
           {reasoningLines.length === 0 ? (
-            <p className="italic text-gray-500">No reasoning provided.</p>
+            <p className="font-sans italic text-gray-500">No reasoning provided.</p>
           ) : (
-            reasoningLines.map((line, idx) => <p key={idx}>{line}</p>)
+            reasoningLines.map((line, idx) => (
+              <p key={idx}>
+                {line}
+              </p>
+            ))
           )}
         </div>
       </div>
@@ -79,7 +83,9 @@ export function ForecastCard({ prediction, prediction_probability, confidence, r
           {keyFactors.map((factor, index) => (
             <li key={index} className="flex items-start">
               <span className="text-indigo-600 mr-2">•</span>
-              <span className="text-gray-700">{factor}</span>
+              <span className="text-gray-800/90 text-sm md:text-base leading-7">
+                {factor}
+              </span>
             </li>
           ))}
         </ul>

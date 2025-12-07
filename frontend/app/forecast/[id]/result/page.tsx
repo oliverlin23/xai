@@ -50,12 +50,17 @@ export default function ForecastResultPage() {
     )
   }
 
+  const agentTokenTotal = forecast.agent_logs.reduce((sum: number, log: any) => {
+    const tokens = Number(log.tokens_used ?? 0)
+    return sum + (Number.isFinite(tokens) ? tokens : 0)
+  }, 0)
+
+  const parsedTotalCost = Number(forecast.total_cost_tokens)
   const totalTokens =
-    forecast.total_cost_tokens ??
-    forecast.agent_logs.reduce((sum: number, log: any) => sum + (log.tokens_used || 0), 0)
+    Number.isFinite(parsedTotalCost) && parsedTotalCost > 0 ? parsedTotalCost : agentTokenTotal
 
   return (
-    <div className="max-w-6xl mx-auto px-4 pt-24 pb-10">
+    <div className="max-w-7xl mx-auto px-4 pt-24 pb-10">
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -73,14 +78,16 @@ export default function ForecastResultPage() {
         </Link>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 mb-8 items-start">
-        <ForecastCard
-          prediction={forecast.prediction_result.prediction}
-          prediction_probability={forecast.prediction_result.prediction_probability}
-          confidence={forecast.prediction_result.confidence}
-          reasoning={forecast.prediction_result.reasoning}
-          keyFactors={forecast.prediction_result.key_factors}
-        />
+      <div className="grid lg:grid-cols-3 gap-6 mb-8 items-start">
+        <div className="lg:col-span-2">
+          <ForecastCard
+            prediction={forecast.prediction_result.prediction}
+            prediction_probability={forecast.prediction_result.prediction_probability}
+            confidence={forecast.prediction_result.confidence}
+            reasoning={forecast.prediction_result.reasoning}
+            keyFactors={forecast.prediction_result.key_factors}
+          />
+        </div>
 
         <div className="space-y-6">
           <div className="bg-white rounded-lg shadow-lg p-6">
@@ -99,7 +106,7 @@ export default function ForecastResultPage() {
               <div className="flex justify-between">
                 <span className="text-gray-600">Total Tokens Used</span>
                 <span className="font-semibold">
-                  {(forecast.total_cost_tokens ?? 0).toLocaleString()}
+                  {totalTokens.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between">
