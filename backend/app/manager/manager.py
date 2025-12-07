@@ -29,8 +29,16 @@ from app.market.orderbook import OrderBook
 from app.noise_traders.noise_agent import NoiseTrader
 from app.manager.market_maker import AvellanedaStoikovMM, MMConfig
 from app.core.logging_config import get_logger
+from x_search.communities import SPHERES, get_sphere_names
 
 logger = get_logger(__name__)
+
+DEFAULT_TRADER_SPHERES = [
+    "eacc_sovereign",
+    "america_first",
+    "blue_establishment",
+    "progressive_left",
+]
 
 
 class SimulationManager:
@@ -47,7 +55,9 @@ class SimulationManager:
         prediction_result: Dict[str, Any],
         duration_seconds: int = 60,
         time_step: float = 1.0,
-        trader_communities: Optional[List[str]] = None
+        trader_communities: Optional[List[str]] = None,
+        trader_spheres: Optional[List[str]] = None,
+        noise_trader_kwargs: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize simulation manager.
@@ -60,7 +70,9 @@ class SimulationManager:
                 - confidence (float 0-1): Confidence in that probability
             duration_seconds: How long to run simulation
             time_step: Seconds between simulation steps
-            trader_communities: Which X communities to spawn traders for
+            trader_communities: Deprecated alias for trader_spheres
+            trader_spheres: Which X spheres to spawn traders for
+            noise_trader_kwargs: Optional overrides passed to NoiseTrader constructor
         """
         self.session_id = session_id
         self.question = question
@@ -99,23 +111,48 @@ class SimulationManager:
         
         # === INITIALIZE TRADERS ===
         self.traders: List[NoiseTrader] = []
-        # Valid communities: tech_vc, maga_right, progressive_left, liberal_establishment,
-        # conservative_establishment, crypto_web3, ai_ml, podcast_media
-        self.trader_communities = trader_communities or ["crypto_web3", "tech_vc", "ai_ml", "podcast_media"]
+        trader_list = trader_spheres or trader_communities
+        self.trader_spheres = self._normalize_spheres(trader_list)
+        self.noise_trader_kwargs = noise_trader_kwargs or {}
+    
+    def _normalize_spheres(self, spheres: Optional[List[str]]) -> List[str]:
+        """Ensure trader spheres are valid; fall back to defaults if needed."""
+        if not spheres:
+            return DEFAULT_TRADER_SPHERES
+        
+        valid_spheres = []
+        for sphere in spheres:
+            if sphere in SPHERES:
+                valid_spheres.append(sphere)
+            else:
+                logger.warning(
+                    f"[MANAGER] Ignoring unknown trader sphere '{sphere}'. "
+                    f"Valid options: {', '.join(get_sphere_names())}"
+                )
+        
+        if not valid_spheres:
+            logger.warning("[MANAGER] No valid trader spheres provided; falling back to defaults.")
+            return DEFAULT_TRADER_SPHERES
+        return valid_spheres
         
     async def setup_traders(self):
         """Initialize noise traders for each community."""
-        for community in self.trader_communities:
+        for sphere in self.trader_spheres:
             try:
+                trader_kwargs = {**self.noise_trader_kwargs}
+                trader_kwargs.pop("sphere", None)
+                trader_kwargs.pop("agent_name", None)
+                enable_tools = trader_kwargs.pop("enable_tools", True)
                 trader = NoiseTrader(
-                    community=community,
-                    agent_name=f"trader_{community}",
-                    enable_tools=True  # Enable live X search
+                    sphere=sphere,
+                    agent_name=f"trader_{sphere}",
+                    enable_tools=enable_tools,
+                    **trader_kwargs,
                 )
                 self.traders.append(trader)
-                logger.info(f"[MANAGER] Initialized trader for '{community}' community")
+                logger.info(f"[MANAGER] Initialized trader for '{sphere}' sphere")
             except Exception as e:
-                logger.error(f"[MANAGER] Failed to init trader {community}: {e}")
+                logger.error(f"[MANAGER] Failed to init trader {sphere}: {e}")
 
     async def run(self) -> Dict[str, Any]:
         """
@@ -264,7 +301,8 @@ class SimulationManager:
                     price=price,
                     quantity=qty
                 )
-                self.orderbook.place_order(order)
+                _, trades = self.orderbook.place_order(order)
+                self._process_mm_trades(trades)
                 logger.info(f"[MANAGER] {trader.agent_name} placed YES@{price} (pred={trader_prob})")
                 
             elif trader_prob < current_mid - edge_threshold:
@@ -277,7 +315,8 @@ class SimulationManager:
                     price=price,
                     quantity=qty
                 )
-                self.orderbook.place_order(order)
+                _, trades = self.orderbook.place_order(order)
+                self._process_mm_trades(trades)
                 logger.info(f"[MANAGER] {trader.agent_name} placed NO@{price} (pred={trader_prob})")
             else:
                 logger.info(f"[MANAGER] {trader.agent_name} no trade (pred={trader_prob}, mid={current_mid})")
