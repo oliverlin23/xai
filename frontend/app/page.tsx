@@ -3,7 +3,7 @@
 import Image from "next/image"
 import { Press_Start_2P } from "next/font/google"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { type FormEvent, type KeyboardEvent, useState } from "react"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
@@ -29,12 +29,17 @@ export default function Page() {
     }, 2400) // allow fade-out before routing
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter to submit (prevent newline); allow Shift+Enter to newline
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSubmit()
     }
+  }
+
+  const handleFormSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    handleSubmit()
   }
 
   return (
@@ -95,7 +100,10 @@ export default function Page() {
           </div>
 
           <div className="w-full flex justify-center">
-            <div className="w-full max-w-2xl">
+            <form
+              onSubmit={handleFormSubmit}
+              className="w-full max-w-2xl flex flex-col gap-3"
+            >
               <div className="relative w-full border-4 border-[#2d3748] rounded-lg bg-white shadow-[0_12px_30px_rgba(0,0,0,0.45)] focus-within:border-[#2d7dd2] transition-colors">
                 <textarea
                   value={query}
@@ -113,9 +121,17 @@ export default function Page() {
                     const maxHeight = 260 // ~8 lines
                     target.style.height = Math.min(target.scrollHeight, maxHeight) + "px"
                   }}
+                  aria-label="Ask Cassandra a question"
                 />
               </div>
-            </div>
+              <button
+                type="submit"
+                disabled={!query.trim() || isLoading}
+                className={`${pressStart.className} w-full sm:w-auto self-end px-6 py-3 rounded-lg border-4 border-[#2d3748] bg-[#2d7dd2] text-[#f7f5f0] uppercase tracking-[0.15em] shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed`}
+              >
+                Enter
+              </button>
+            </form>
           </div>
         </div>
       </div>
