@@ -9,7 +9,16 @@ from .tool import (
     XApiClient,
     XApiError,
 )
-from .communities import COMMUNITIES
+from .communities import (
+    SPHERES,
+    Sphere,
+    get_sphere,
+    get_sphere_names,
+    get_all_spheres,
+    get_sphere_description,
+    get_all_spheres_context,
+    get_spheres_for_topic,
+)
 
 __all__ = [
     "XSearchTool",
@@ -19,7 +28,14 @@ __all__ = [
     "TweetResult",
     "XApiClient",
     "XApiError",
-    "COMMUNITIES",
+    "SPHERES",
+    "Sphere",
+    "get_sphere",
+    "get_sphere_names",
+    "get_all_spheres",
+    "get_sphere_description",
+    "get_all_spheres_context",
+    "get_spheres_for_topic",
 ]
 
 

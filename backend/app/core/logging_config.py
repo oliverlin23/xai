@@ -33,7 +33,7 @@ _agent_loggers = {}
 def get_logger(name: str) -> logging.Logger:
     """Get a logger for a specific module"""
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.WARNING)
     if not logger.handlers:
         logger.addHandler(console_handler)
     return logger

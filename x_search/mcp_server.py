@@ -12,7 +12,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import ListToolsResult, TextContent, Tool
 from pydantic import ValidationError
 
-from .communities import COMMUNITIES
+from .communities import SPHERES, get_sphere_names
 from .tool import XSearchConfig, run_tool
 
 SERVER_NAME = "x-search"
@@ -30,7 +30,7 @@ def _json_serializer(obj: Any) -> Any:
 
 server = Server(
     name=SERVER_NAME,
-    instructions="Search tweets by topic from specific users or communities via the X API.",
+    instructions="Search tweets by topic from specific spheres of influence via the X API.",
 )
 
 REQUEST_SCHEMA: dict[str, Any] = {
@@ -69,10 +69,10 @@ REQUEST_SCHEMA: dict[str, Any] = {
             "default": False,
             "description": "Set true to include replies in results",
         },
-        "community": {
+        "sphere": {
             "type": "string",
-            "enum": list(COMMUNITIES.keys()),
-            "description": f"Community sphere to also search. Options: {', '.join(COMMUNITIES.keys())}",
+            "enum": get_sphere_names(),
+            "description": f"Sphere of influence to search. Options: {', '.join(get_sphere_names())}",
         },
         "max_related_users": {
             "type": "integer",
@@ -92,8 +92,9 @@ async def _list_tools(_: Any = None) -> ListToolsResult:
         name=TOOL_NAME,
         description=(
             "Search tweets about a topic from a specific user and optionally from "
-            "a predefined community (tech_vc, maga_right, progressive_left, crypto_web3, "
-            "ai_ml, podcast_media, news_media, world_leaders)."
+            "a sphere of influence (eacc_sovereign, america_first, blue_establishment, "
+            "progressive_left, optimizer_idw, fintwit_market, builder_engineering, "
+            "academic_research, osint_intel)."
         ),
         inputSchema=REQUEST_SCHEMA,
     )
@@ -118,7 +119,7 @@ async def _call_tool(name: str, arguments: dict[str, Any] | None):
         "lang": args.get("lang", "en"),
         "include_retweets": args.get("include_retweets", False),
         "include_replies": args.get("include_replies", False),
-        "community": args.get("community"),
+        "sphere": args.get("sphere"),
     }
     config = XSearchConfig(
         max_related_users=args.get("max_related_users", 0),
