@@ -50,6 +50,10 @@ export default function ForecastResultPage() {
     )
   }
 
+  const totalTokens =
+    forecast.total_cost_tokens ??
+    forecast.agent_logs.reduce((sum: number, log: any) => sum + (log.tokens_used || 0), 0)
+
   return (
     <div className="max-w-6xl mx-auto px-4 pt-24 pb-10">
       <div className="mb-8 flex items-center justify-between">
@@ -83,7 +87,7 @@ export default function ForecastResultPage() {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               Forecast Statistics
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Total Agents</span>
                 <span className="font-semibold">{forecast.agent_logs.length}</span>
@@ -100,7 +104,7 @@ export default function ForecastResultPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Completed At</span>
-                <span className="font-semibold text-sm">
+                <span className="font-semibold text-xs">
                   {forecast.completed_at
                     ? new Date(forecast.completed_at).toLocaleString()
                     : "N/A"}

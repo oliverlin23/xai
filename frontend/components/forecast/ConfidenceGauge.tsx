@@ -3,9 +3,10 @@
 interface ConfidenceGaugeProps {
   confidence: number // 0-1
   label?: string // Optional label (default: "Confidence Score")
+  showDescriptor?: boolean // Toggle the bottom descriptor text
 }
 
-export function ConfidenceGauge({ confidence, label = "Confidence Score" }: ConfidenceGaugeProps) {
+export function ConfidenceGauge({ confidence, label = "Confidence Score", showDescriptor = true }: ConfidenceGaugeProps) {
   const percentage = Math.round(confidence * 100)
 
   const getColor = (conf: number) => {
@@ -31,12 +32,14 @@ export function ConfidenceGauge({ confidence, label = "Confidence Score" }: Conf
         />
       </div>
 
-      <p className="text-xs text-gray-500 text-center">
-        {confidence >= 0.8 && "High confidence"}
-        {confidence >= 0.6 && confidence < 0.8 && "Moderate confidence"}
-        {confidence >= 0.4 && confidence < 0.6 && "Low confidence"}
-        {confidence < 0.4 && "Very low confidence"}
-      </p>
+      {showDescriptor && (
+        <p className="text-xs text-gray-500 text-center">
+          {confidence >= 0.8 && "High confidence"}
+          {confidence >= 0.6 && confidence < 0.8 && "Moderate confidence"}
+          {confidence >= 0.4 && confidence < 0.6 && "Low confidence"}
+          {confidence < 0.4 && "Very low confidence"}
+        </p>
+      )}
     </div>
   )
 }
