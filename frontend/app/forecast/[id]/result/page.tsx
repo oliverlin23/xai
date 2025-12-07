@@ -2,16 +2,54 @@
 
 import { useParams } from "next/navigation"
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { useForecast } from "@/hooks/useForecast"
 import { ForecastCard } from "@/components/forecast/ForecastCard"
 import { FactorList } from "@/components/factors/FactorList"
 import { AgentMonitor } from "@/components/agents/AgentMonitor"
+import { api } from "@/lib/api"
+
+interface PreviousForecast {
+  id: string
+  question_text: string
+  status: string
+  prediction_result?: {
+    prediction?: string
+    prediction_probability?: number
+    confidence?: number
+  }
+  completed_at?: string
+  created_at?: string
+}
 
 export default function ForecastResultPage() {
   const params = useParams()
   const forecastId = params.id as string
 
   const { data: forecast, isLoading, error } = useForecast(forecastId)
+
+  const [previousOpen, setPreviousOpen] = useState(false)
+  const [previousLoading, setPreviousLoading] = useState(false)
+  const [previousError, setPreviousError] = useState<string | null>(null)
+  const [previousForecasts, setPreviousForecasts] = useState<PreviousForecast[]>([])
+
+  useEffect(() => {
+    if (!previousOpen) return
+    const loadPrevious = async () => {
+      setPreviousLoading(true)
+      setPreviousError(null)
+      try {
+        const res = await api.forecasts.list(10, 0)
+        const items = (res?.forecasts ?? []) as PreviousForecast[]
+        setPreviousForecasts(items)
+      } catch (err: any) {
+        setPreviousError(err?.message || "Failed to load previous forecasts")
+      } finally {
+        setPreviousLoading(false)
+      }
+    }
+    loadPrevious()
+  }, [previousOpen])
 
   if (isLoading) {
     return (
@@ -73,12 +111,20 @@ export default function ForecastResultPage() {
             {forecast.question_text}
           </p>
         </div>
-        <Link
-          href="/"
-          className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-indigo-700"
-        >
-          New Forecast
-        </Link>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setPreviousOpen(true)}
+            className="bg-white border border-indigo-200 text-indigo-700 px-4 py-3 rounded-lg font-medium hover:bg-indigo-50 shadow-sm"
+          >
+            Show Previous Forecasts
+          </button>
+          <Link
+            href="/"
+            className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-indigo-700"
+          >
+            New Forecast
+          </Link>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-8 items-stretch">
@@ -165,6 +211,78 @@ export default function ForecastResultPage() {
           <AgentMonitor agentLogs={forecast.agent_logs} currentPhase="all" />
         </div>
       </div>
+
+      {previousOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setPreviousOpen(false)} />
+          <div className="relative w-full max-w-4xl bg-white rounded-xl shadow-2xl p-6 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">Previous Forecasts</h3>
+              <button
+                onClick={() => setPreviousOpen(false)}
+                className="text-gray-500 hover:text-gray-800 text-lg font-semibold"
+              >
+                ×
+              </button>
+            </div>
+
+            {previousLoading && (
+              <div className="text-center py-10 text-gray-600">Loading...</div>
+            )}
+
+            {previousError && (
+              <div className="text-red-600 text-sm mb-3">{previousError}</div>
+            )}
+
+            {!previousLoading && !previousError && previousForecasts.length === 0 && (
+              <div className="text-center py-10 text-gray-500">No previous forecasts found.</div>
+            )}
+
+            <div className="grid md:grid-cols-2 gap-4">
+              {previousForecasts.map((item) => {
+                const pred = item.prediction_result
+                const probability = pred?.prediction_probability
+                const confidence = pred?.confidence
+                return (
+                  <Link
+                    key={item.id}
+                    href={`/forecast/${item.id}/result`}
+                    className="block border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white"
+                    onClick={() => setPreviousOpen(false)}
+                  >
+                    <div className="text-sm text-gray-500 mb-1">
+                      {item.completed_at ? new Date(item.completed_at).toLocaleString() : "In progress"}
+                    </div>
+                    <div className="font-semibold text-gray-900 line-clamp-2 mb-2">
+                      {item.question_text || "Untitled question"}
+                    </div>
+                    {pred?.prediction && (
+                      <div className="text-indigo-700 font-semibold mb-1">
+                        {pred.prediction}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-700 flex flex-wrap gap-3">
+                      {typeof probability === "number" && (
+                        <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                          Prob: {Math.round(probability * 100)}%
+                        </span>
+                      )}
+                      {typeof confidence === "number" && (
+                        <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
+                          Conf: {Math.round(confidence * 100)}%
+                        </span>
+                      )}
+                      <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-semibold capitalize">
+                        {item.status || "unknown"}
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

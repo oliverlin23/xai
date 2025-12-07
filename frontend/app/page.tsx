@@ -1,9 +1,11 @@
 "use client"
 
 import Image from "next/image"
+import Link from "next/link"
 import { Press_Start_2P } from "next/font/google"
 import { useRouter } from "next/navigation"
-import { type FormEvent, type KeyboardEvent, useState } from "react"
+import { type FormEvent, type KeyboardEvent, useEffect, useState } from "react"
+import { api } from "@/lib/api"
 
 const pressStart = Press_Start_2P({ weight: "400", subsets: ["latin"] })
 
@@ -14,6 +16,16 @@ export default function Page() {
   const [loadStarted, setLoadStarted] = useState(false)
   const [overlayVisible, setOverlayVisible] = useState(false)
   const [overlayFadeOut, setOverlayFadeOut] = useState(false)
+  const [previousOpen, setPreviousOpen] = useState(false)
+  const [previousLoading, setPreviousLoading] = useState(false)
+  const [previousError, setPreviousError] = useState<string | null>(null)
+  const [previousForecasts, setPreviousForecasts] = useState<Array<{
+    id: string
+    question_text: string
+    status: string
+    prediction_result?: { prediction?: string; prediction_probability?: number; confidence?: number }
+    completed_at?: string
+  }>>([])
 
   const handleSubmit = () => {
     if (!query.trim() || isLoading) return
@@ -41,6 +53,23 @@ export default function Page() {
     e.preventDefault()
     handleSubmit()
   }
+
+  useEffect(() => {
+    if (!previousOpen) return
+    const load = async () => {
+      setPreviousLoading(true)
+      setPreviousError(null)
+      try {
+        const res = await api.forecasts.list(10, 0)
+        setPreviousForecasts(res?.forecasts ?? [])
+      } catch (err: any) {
+        setPreviousError(err?.message || "Failed to load previous forecasts")
+      } finally {
+        setPreviousLoading(false)
+      }
+    }
+    load()
+  }, [previousOpen])
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -135,6 +164,13 @@ export default function Page() {
               </button>
             </form>
           </div>
+
+          <button
+            onClick={() => setPreviousOpen(true)}
+            className="px-4 py-2 rounded-lg border border-white/30 bg-white/10 text-white backdrop-blur shadow hover:bg-white/20 transition-colors text-sm"
+          >
+            Show Previous Forecasts
+          </button>
         </div>
       </div>
 
@@ -172,6 +208,78 @@ export default function Page() {
               <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20 relative">
                 <div className="absolute inset-y-0 left-0 w-1/3 animate-[slide_1.8s_ease-in-out_infinite] bg-white/60 rounded-full" />
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previousOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setPreviousOpen(false)} />
+          <div className="relative w-full max-w-4xl bg-white rounded-xl shadow-2xl p-6 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">Previous Forecasts</h3>
+              <button
+                onClick={() => setPreviousOpen(false)}
+                className="text-gray-500 hover:text-gray-800 text-lg font-semibold"
+              >
+                ×
+              </button>
+            </div>
+
+            {previousLoading && (
+              <div className="text-center py-10 text-gray-600">Loading...</div>
+            )}
+
+            {previousError && (
+              <div className="text-red-600 text-sm mb-3">{previousError}</div>
+            )}
+
+            {!previousLoading && !previousError && previousForecasts.length === 0 && (
+              <div className="text-center py-10 text-gray-500">No previous forecasts found.</div>
+            )}
+
+            <div className="grid md:grid-cols-2 gap-4">
+              {previousForecasts.map((item) => {
+                const pred = item.prediction_result
+                const probability = pred?.prediction_probability
+                const confidence = pred?.confidence
+                return (
+                  <Link
+                    key={item.id}
+                    href={`/forecast/${item.id}/result`}
+                    className="block border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white"
+                    onClick={() => setPreviousOpen(false)}
+                  >
+                    <div className="text-sm text-gray-500 mb-1">
+                      {item.completed_at ? new Date(item.completed_at).toLocaleString() : "In progress"}
+                    </div>
+                    <div className="font-semibold text-gray-900 line-clamp-2 mb-2">
+                      {item.question_text || "Untitled question"}
+                    </div>
+                    {pred?.prediction && (
+                      <div className="text-indigo-700 font-semibold mb-1">
+                        {pred.prediction}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-700 flex flex-wrap gap-3">
+                      {typeof probability === "number" && (
+                        <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                          Prob: {Math.round(probability * 100)}%
+                        </span>
+                      )}
+                      {typeof confidence === "number" && (
+                        <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
+                          Conf: {Math.round(confidence * 100)}%
+                        </span>
+                      )}
+                      <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-semibold capitalize">
+                        {item.status || "unknown"}
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })}
             </div>
           </div>
         </div>
