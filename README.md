@@ -1,7 +1,6 @@
-# Superforecaster Trading Simulation
+# Grok Trading Simulation
 
-AI-powered prediction market with 18 autonomous trading agents analyzing X/Twitter sentiment.
-
+Prediction market with 18 autonomous Grok-4.1-Fast agents trading on X/Twitter sentiment.
 ## Setup
 
 ### Prerequisites
@@ -9,7 +8,8 @@ AI-powered prediction market with 18 autonomous trading agents analyzing X/Twitt
 - Python 3.11+ with [uv](https://github.com/astral-sh/uv)
 - Node.js 18+
 - [Supabase](https://supabase.com) account
-- [xAI/Grok API Key](https://x.ai)
+- [xAI/Grok API Key](https://console.x.ai/)
+- [X API Key](https://console.x.com/)
 
 ### Database
 
