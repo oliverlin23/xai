@@ -17,7 +17,7 @@ from datetime import datetime, UTC
 from app.agents.traders.fundamental_agent import FundamentalTrader, get_fundamental_trader_names
 from app.agents.traders.noise_agent import NoiseTrader
 from app.agents.traders.user_agent import UserAgent, get_user_agent_names
-from app.market import SupabaseMarketMaker
+from app.services.market import SupabaseMarketMaker
 from app.db.repositories import TraderRepository, SessionRepository
 
 logger = logging.getLogger(__name__)

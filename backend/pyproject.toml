@@ -16,7 +16,11 @@ dependencies = [
     "openai>=1.0.0",
     "xai-sdk>=1.5.0",
     "tweepy>=4.14.0",
+    "x-search",
 ]
+
+[tool.uv.sources]
+x-search = { path = "..", editable = true }
 
 [project.optional-dependencies]
 dev = [

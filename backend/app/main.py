@@ -341,7 +341,7 @@ async def run_trading_simulation_background(
     """
     import re
     from app.db.repositories import ForecasterResponseRepository, TraderRepository
-    from app.market import SupabaseMarketMaker
+    from app.services.market import SupabaseMarketMaker
     from app.agents.traders.simulation import TradingSimulation, register_simulation, unregister_simulation
     
     logger.info(f"[BACKGROUND] Starting trading simulation for session {session_id}")
@@ -821,7 +821,7 @@ async def get_orderbook(session_id: str):
     """
     logger.info(f"GET /api/sessions/{session_id}/orderbook")
     
-    from app.market import SupabaseMarketMaker
+    from app.services.market import SupabaseMarketMaker
     
     market_maker = SupabaseMarketMaker()
     orderbook = market_maker.get_orderbook(session_id)
@@ -836,7 +836,7 @@ async def get_trades(session_id: str, limit: int = 50):
     """
     logger.info(f"GET /api/sessions/{session_id}/trades (limit={limit})")
     
-    from app.market import SupabaseMarketMaker
+    from app.services.market import SupabaseMarketMaker
     
     market_maker = SupabaseMarketMaker()
     trades = market_maker.get_recent_trades(session_id, limit=limit)

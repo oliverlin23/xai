@@ -118,13 +118,13 @@ export function useRealtimeTrades(sessionId: string) {
             flashingTraders: flashers,
           }))
           
-          // Clear flashing after 500ms
+          // Clear flashing after 1 second
           setTimeout(() => {
             setData((prev) => ({
               ...prev,
               flashingTraders: [],
             }))
-          }, 500)
+          }, 1000)
         }
       )
       // Subscribe to trader state updates

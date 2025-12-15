@@ -50,7 +50,7 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from app.agents.traders.noise_agent import NoiseTrader
 from app.agents.traders.semantic_filter import SemanticFilterConfig
-from app.market import SupabaseMarketMaker
+from app.services.market import SupabaseMarketMaker
 
 logging.basicConfig(
     level=logging.WARNING,
